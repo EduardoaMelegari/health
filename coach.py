@@ -2,9 +2,23 @@
 progresso e edita o plano via tool use. Usado por app.py."""
 import json
 import os
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 
 import actions
+
+_WD = ["segunda", "terça", "quarta", "quinta", "sexta", "sábado", "domingo"]
+_MO = ["janeiro", "fevereiro", "março", "abril", "maio", "junho", "julho",
+       "agosto", "setembro", "outubro", "novembro", "dezembro"]
+
+
+def day_label(iso):
+    d = date.fromisoformat(iso)
+    today = date.today()
+    if d == today:
+        return "Hoje"
+    if d == today - timedelta(days=1):
+        return "Ontem"
+    return f"{_WD[d.weekday()].capitalize()}, {d.day} de {_MO[d.month - 1]}"
 
 MODEL = os.environ.get("ANTHROPIC_MODEL", "claude-opus-4-8")
 MAX_TOKENS = 2000
@@ -202,12 +216,18 @@ def _save(conn, role, content, text=None):
     conn.commit()
 
 
-def load_history(conn, include_inactive=False):
-    """Mensagens para exibir na UI (role + texto)."""
-    where = "" if include_inactive else "WHERE active = 1"
+def load_history_grouped(conn):
+    """Mensagens para exibir na UI, agrupadas por dia (divisor de data)."""
     rows = conn.execute(
-        f"SELECT role, text FROM chat_message {where} ORDER BY id").fetchall()
-    return [{"role": r["role"], "text": r["text"]} for r in rows if r["text"]]
+        "SELECT role, text, created_at FROM chat_message"
+        " WHERE active = 1 AND text IS NOT NULL ORDER BY id").fetchall()
+    groups = []
+    for r in rows:
+        d = r["created_at"][:10]
+        if not groups or groups[-1]["date"] != d:
+            groups.append({"date": d, "label": day_label(d), "messages": []})
+        groups[-1]["messages"].append({"role": r["role"], "text": r["text"]})
+    return groups
 
 
 def _api_history(conn):

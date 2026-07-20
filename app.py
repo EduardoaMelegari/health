@@ -190,8 +190,9 @@ def dieta():
 
 @app.route("/coach")
 def coach_page():
-    history = coach.load_history(get_conn())
-    return render_template("coach.html", page="coach", history=history,
+    groups = coach.load_history_grouped(get_conn())
+    return render_template("coach.html", page="coach", groups=groups,
+                           last_date=groups[-1]["date"] if groups else "",
                            configured=coach.is_configured())
 
 

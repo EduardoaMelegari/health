@@ -220,14 +220,45 @@ nav svg { width: 22px; height: 22px; }
 
 /* ---------- coach / chat ---------- */
 #chat { display: flex; flex-direction: column; gap: 10px; margin-bottom: 14px; }
+.day-divider {
+  display: flex; align-items: center; gap: 10px;
+  color: var(--muted); font-size: 0.72rem; margin: 4px 2px;
+}
+.day-divider::before, .day-divider::after {
+  content: ""; flex: 1; height: 1px; background: var(--hair);
+}
+.day-divider span { white-space: nowrap; }
 .bubble {
   max-width: 85%; padding: 11px 14px; border-radius: 16px;
-  font-size: 0.92rem; line-height: 1.4; white-space: pre-wrap; word-wrap: break-word;
+  font-size: 0.92rem; line-height: 1.4; word-wrap: break-word; overflow-wrap: anywhere;
 }
+/* texto puro (usuário/estado) preserva quebras de linha; o coach usa HTML renderizado */
+.bubble.user, .bubble.typing, .bubble.error { white-space: pre-wrap; }
 .bubble.user {
   align-self: flex-end; background: var(--accent); color: #fff;
   border-bottom-right-radius: 5px;
 }
+
+/* markdown dentro dos balões do coach */
+.bubble.assistant > *:first-child { margin-top: 0; }
+.bubble.assistant > *:last-child { margin-bottom: 0; }
+.bubble.assistant p { margin: 0.45em 0; }
+.bubble.assistant ul, .bubble.assistant ol { margin: 0.45em 0; padding-left: 1.3em; }
+.bubble.assistant li { margin: 2px 0; }
+.bubble.assistant strong { font-weight: 650; }
+.bubble.assistant .md-h1, .bubble.assistant .md-h2, .bubble.assistant .md-h3 {
+  font-weight: 650; margin: 0.5em 0 0.2em;
+}
+.bubble.assistant .md-h1 { font-size: 1.05em; }
+.bubble.assistant .md-h3 { font-size: 0.95em; color: var(--text-2); }
+.bubble.assistant table {
+  display: block; overflow-x: auto; border-collapse: collapse;
+  margin: 0.5em 0; font-size: 0.85em; font-variant-numeric: tabular-nums;
+}
+.bubble.assistant th, .bubble.assistant td {
+  border: 1px solid var(--hair); padding: 4px 8px; text-align: left; white-space: nowrap;
+}
+.bubble.assistant th { color: var(--text-2); font-weight: 600; }
 .bubble.assistant {
   align-self: flex-start; background: var(--card);
   border: 1px solid var(--border); border-bottom-left-radius: 5px;
