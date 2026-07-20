@@ -48,18 +48,44 @@
 </section>
 
 <section>
-  <h2>Refeições — toque na opção que vai fazer</h2>
+  <h2>Registrado hoje</h2>
+  <div class="card">
+    {% if configured %}
+    <form class="quick-log" onsubmit="Food.quickLog(event)">
+      <textarea id="quick-text" rows="1" autocomplete="off"
+                placeholder="Descreva o que comeu… ex.: 3 ovos e uma banana (um item por linha, se quiser)"
+                oninput="Food.autogrow(this)" onkeydown="Food.onKey(event)"></textarea>
+      <button class="btn btn-sm" type="submit" id="quick-btn">Registrar</button>
+    </form>
+    {% else %}
+    <p class="notice" style="margin:0 0 8px">Registro por texto precisa da chave da API (aba Coach). Use "comi isso" abaixo enquanto isso.</p>
+    {% endif %}
+    <div id="food-log">
+      {% for e in logged %}
+      <div class="logitem" data-id="{{ e.id }}">
+        <span class="li-main">{% if e.meal %}<b>{{ e.meal }}:</b> {% endif %}{{ e.description }}</span>
+        <span class="li-macros">{{ e.kcal | round | int }} kcal · P {{ e.protein_g | round | int }} · C {{ e.carbs_g | round | int }} · G {{ e.fat_g | round | int }}</span>
+        <button class="li-del" aria-label="Remover" onclick="Food.remove(this, {{ e.id }})">×</button>
+      </div>
+      {% endfor %}
+    </div>
+    <p class="empty" id="food-empty" {{ 'style=display:none' | safe if logged }}>Nada registrado ainda. Toque em "comi isso" numa recomendação ou descreva acima.</p>
+  </div>
+</section>
+
+<section>
+  <h2>O que comer hoje <span class="sub" style="display:inline">· recomendações</span></h2>
   {% for mc in meal_cards %}
-  <div class="card meal" data-meal="{{ mc.row.id }}">
+  <div class="card meal">
     <h3>{{ mc.row.name }}</h3>
     {% for opt in mc.options %}
-    <button class="option {{ 'selected' if mc.chosen == opt.row.id }}"
-            onclick="App.chooseMeal(this, {{ mc.row.id }}, {{ opt.row.id }}, '{{ today }}')">
-      <span class="opt-name"><span class="dot"></span>{{ opt.row.name }}</span>
+    <div class="option static">
+      <span class="opt-name">{{ opt.row.name }}</span>
       <span class="opt-macros">{{ opt.macros.kcal | round | int }} kcal · P {{ opt.macros.protein_g | round | int }} g · C {{ opt.macros.carbs_g | round | int }} g · G {{ opt.macros.fat_g | round | int }} g</span>
       <span class="opt-items">{% for i in opt['items'] %}{{ i.food }} {{ i.grams | round | int }} g{{ ' · ' if not loop.last }}{% endfor %}</span>
       {% if opt.row.description %}<span class="opt-desc">{{ opt.row.description }}</span>{% endif %}
-    </button>
+      <button class="btn-ghost btn-sm ate-this" onclick="Food.logOption(this, {{ opt.row.id }})">comi isso</button>
+    </div>
     {% endfor %}
   </div>
   {% endfor %}
@@ -69,5 +95,64 @@
 {% block scripts %}
 <script>
   App.updateMacros({{ consumed | tojson }}, {{ targets | tojson }});
+
+  const Food = {
+    autogrow(t) { t.style.height = "auto"; t.style.height = Math.min(t.scrollHeight, 120) + "px"; },
+
+    onKey(e) {
+      if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); Food.quickLog(e); }
+    },
+
+    render(e) {
+      const div = document.createElement("div");
+      div.className = "logitem";
+      div.dataset.id = e.id;
+      const meal = e.meal ? `<b>${e.meal}:</b> ` : "";
+      div.innerHTML = `<span class="li-main">${meal}${e.description}</span>`
+        + `<span class="li-macros">${Math.round(e.kcal)} kcal · P ${Math.round(e.protein_g)} · C ${Math.round(e.carbs_g)} · G ${Math.round(e.fat_g)}</span>`
+        + `<button class="li-del" aria-label="Remover">×</button>`;
+      div.querySelector(".li-del").onclick = () => Food.remove(div.querySelector(".li-del"), e.id);
+      document.getElementById("food-log").appendChild(div);
+      document.getElementById("food-empty").style.display = "none";
+    },
+
+    async logOption(btn, optionId) {
+      btn.disabled = true;
+      try {
+        const r = await App.post("/api/food/log-option", { option_id: optionId, date: "{{ today }}" });
+        Food.render(r.entry);
+        App.updateMacros(r.consumed, r.targets);
+      } finally { btn.disabled = false; }
+    },
+
+    async quickLog(e) {
+      e.preventDefault();
+      const input = document.getElementById("quick-text");
+      const text = input.value.trim();
+      if (!text) return;
+      const btn = document.getElementById("quick-btn");
+      btn.disabled = true; btn.textContent = "…";
+      try {
+        const res = await fetch("/api/food/quick-log", {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ text, date: "{{ today }}" }),
+        });
+        const data = await res.json();
+        if (!res.ok) { alert(data.error || "Erro ao registrar."); return; }
+        input.value = "";
+        input.style.height = "auto";
+        data.entries.forEach(Food.render);
+        App.updateMacros(data.consumed, data.targets);
+      } finally { btn.disabled = false; btn.textContent = "Registrar"; }
+    },
+
+    async remove(btn, id) {
+      const r = await App.post("/api/food/delete", { id, date: "{{ today }}" });
+      btn.closest(".logitem").remove();
+      App.updateMacros(r.consumed, r.targets);
+      if (!document.querySelector("#food-log .logitem"))
+        document.getElementById("food-empty").style.display = "";
+    },
+  };
 </script>
 {% endblock %}

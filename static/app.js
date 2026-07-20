@@ -32,21 +32,6 @@ const App = {
     }
   },
 
-  async chooseMeal(el, mealId, optionId, date) {
-    const card = el.closest("[data-meal]");
-    const wasSelected = el.classList.contains("selected");
-    card.querySelectorAll(".option").forEach((o) => o.classList.remove("selected"));
-    if (!wasSelected) el.classList.add("selected");
-    try {
-      const r = await this.post("/api/meal/choose", { meal_id: mealId, option_id: optionId, date });
-      card.querySelectorAll(".option").forEach((o) => o.classList.remove("selected"));
-      if (r.chosen !== null) el.classList.add("selected");
-      this.updateMacros(r.consumed, r.targets);
-    } catch {
-      el.classList.toggle("selected", wasSelected);
-    }
-  },
-
   updateMacros(consumed, targets) {
     const units = { kcal: " kcal", protein_g: " g", carbs_g: " g", fat_g: " g" };
     for (const key of Object.keys(units)) {

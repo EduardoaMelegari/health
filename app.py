@@ -66,8 +66,6 @@ def hoje():
     tasks = [t for t in tasks if str(wd) in t["weekdays"].split(",")]
 
     meals = conn.execute("SELECT * FROM meal ORDER BY sort").fetchall()
-    choices = {r["meal_id"]: r["option_id"] for r in conn.execute(
-        "SELECT meal_id, option_id FROM meal_choice WHERE date = ?", (d.isoformat(),))}
     meal_cards = []
     for m in meals:
         options = conn.execute(
@@ -78,8 +76,9 @@ def hoje():
             items = conn.execute(
                 "SELECT * FROM meal_item WHERE option_id = ? ORDER BY id", (o["id"],)).fetchall()
             opts.append({"row": o, "items": items, "macros": option_macros(conn, o["id"])})
-        meal_cards.append({"row": m, "options": opts, "chosen": choices.get(m["id"])})
+        meal_cards.append({"row": m, "options": opts})
 
+    logged = actions.food_log_for_date(conn, d.isoformat())
     tg = targets_for(d, cfg)
     consumed = macros_for_date(conn, d)
 
@@ -106,9 +105,9 @@ def hoje():
 
     return render_template(
         "hoje.html", page="hoje", date_pt=fmt_date_pt(d), today=d.isoformat(),
-        tasks=tasks, meal_cards=meal_cards, targets=tg, consumed=consumed,
+        tasks=tasks, meal_cards=meal_cards, logged=logged, targets=tg, consumed=consumed,
         workout=WORKOUT_BY_WEEKDAY.get(wd), is_run_day=wd in RUN_DAYS,
-        adherence=adherence, next_review=next_review)
+        adherence=adherence, next_review=next_review, configured=coach.is_configured())
 
 
 @app.route("/peso")
@@ -186,7 +185,7 @@ def export_page():
         "peso": conn.execute("SELECT COUNT(*) FROM weight_log").fetchone()[0],
         "checklist": conn.execute("SELECT COUNT(*) FROM task_done").fetchone()[0],
         "treino": conn.execute("SELECT COUNT(*) FROM set_log").fetchone()[0],
-        "refeicoes": conn.execute("SELECT COUNT(*) FROM meal_choice").fetchone()[0],
+        "registro": conn.execute("SELECT COUNT(*) FROM food_log").fetchone()[0],
         "coach": conn.execute("SELECT COUNT(*) FROM chat_message WHERE text IS NOT NULL").fetchone()[0],
     }
     return render_template("export.html", page="export", counts=counts)
@@ -213,27 +212,44 @@ def toggle_task():
     return jsonify(done=done)
 
 
-@app.post("/api/meal/choose")
-def choose_meal():
+def _food_state(conn, date_str):
+    d = parse_date(date_str)
+    return {"consumed": macros_for_date(conn, d), "targets": targets_for(d, get_config())}
+
+
+@app.post("/api/food/log-option")
+def food_log_option():
     p = request.get_json()
     conn = get_conn()
-    current = conn.execute(
-        "SELECT option_id FROM meal_choice WHERE date = ? AND meal_id = ?",
-        (p["date"], p["meal_id"])).fetchone()
-    if current and current["option_id"] == p["option_id"]:
-        conn.execute("DELETE FROM meal_choice WHERE date = ? AND meal_id = ?",
-                     (p["date"], p["meal_id"]))
-        chosen = None
-    else:
-        conn.execute(
-            "INSERT INTO meal_choice (date, meal_id, option_id) VALUES (?, ?, ?)"
-            " ON CONFLICT(date, meal_id) DO UPDATE SET option_id = excluded.option_id",
-            (p["date"], p["meal_id"], p["option_id"]))
-        chosen = p["option_id"]
-    conn.commit()
-    d = parse_date(p["date"])
-    return jsonify(chosen=chosen, consumed=macros_for_date(conn, d),
-                   targets=targets_for(d, get_config()))
+    d = p.get("date") or today_str()
+    entry = actions.log_food_from_option(conn, d, p["option_id"])
+    return jsonify(entry=entry, **_food_state(conn, d))
+
+
+@app.post("/api/food/quick-log")
+def food_quick_log():
+    if not coach.is_configured():
+        return jsonify(error="Registro por texto precisa da ANTHROPIC_API_KEY no servidor."), 503
+    p = request.get_json() or {}
+    text = (p.get("text") or "").strip()
+    if not text:
+        return jsonify(error="Descreva o que comeu."), 400
+    conn = get_conn()
+    d = p.get("date") or today_str()
+    try:
+        entries = coach.quick_log(conn, text, d)
+    except Exception as exc:
+        app.logger.exception("erro no quick_log")
+        return jsonify(error=f"Não consegui registrar: {exc}"), 502
+    return jsonify(entries=entries, **_food_state(conn, d))
+
+
+@app.post("/api/food/delete")
+def food_delete():
+    p = request.get_json()
+    conn = get_conn()
+    actions.delete_food_log(conn, p["id"])
+    return jsonify(**_food_state(conn, p.get("date") or today_str()))
 
 
 @app.post("/api/weight")
@@ -324,11 +340,9 @@ def update_item(item_id):
 
 @app.get("/api/shopping-list")
 def shopping_list():
-    """Soma os itens das opções escolhidas nos últimos 7 dias; para dias sem escolha
-    nas 4 refeições principais usa a opção padrão (primeira). Resultado em peso CRU."""
+    """Lista da semana a partir da BIBLIOTECA: opção padrão (1ª) de cada refeição
+    principal × 7 dias, convertida para peso CRU pelo raw_factor."""
     conn = get_conn()
-    d = date.today()
-    since = (d - timedelta(days=6)).isoformat()
     meals = conn.execute("SELECT * FROM meal ORDER BY sort").fetchall()
     totals = {}
 
@@ -338,18 +352,13 @@ def shopping_list():
             totals[it["food"]] = totals.get(it["food"], 0) + raw * mult
 
     for idx, m in enumerate(meals):
-        chosen = conn.execute(
-            "SELECT option_id, COUNT(*) n FROM meal_choice WHERE meal_id = ? AND date >= ?"
-            " GROUP BY option_id", (m["id"], since)).fetchall()
-        n_chosen = sum(r["n"] for r in chosen)
-        for r in chosen:
-            add_items(r["option_id"], r["n"])
-        if idx < 4 and n_chosen < 7:  # fallback só para as 4 refeições principais
-            default = conn.execute(
-                "SELECT id FROM meal_option WHERE meal_id = ? AND active = 1 ORDER BY sort, id LIMIT 1",
-                (m["id"],)).fetchone()
-            if default:
-                add_items(default["id"], 7 - n_chosen)
+        if idx >= 4:  # só as 4 refeições principais (ignora "Extra")
+            continue
+        default = conn.execute(
+            "SELECT id FROM meal_option WHERE meal_id = ? AND active = 1 ORDER BY sort, id LIMIT 1",
+            (m["id"],)).fetchone()
+        if default:
+            add_items(default["id"], 7)
 
     items = [{"food": f, "grams_raw": round(g / 10) * 10} for f, g in sorted(totals.items())]
     return jsonify(items=items)
@@ -415,21 +424,15 @@ def export_treino():
                         [tuple(r) for r in rows])
 
 
-@app.get("/export/refeicoes.csv")
-def export_refeicoes():
-    conn = get_conn()
-    rows = conn.execute(
-        "SELECT ch.date, m.name meal, o.name opt, ch.option_id FROM meal_choice ch"
-        " JOIN meal m ON m.id = ch.meal_id JOIN meal_option o ON o.id = ch.option_id"
-        " ORDER BY ch.date, m.sort").fetchall()
-    out = []
-    for r in rows:
-        mac = option_macros(conn, r["option_id"])
-        out.append((r["date"], r["meal"], r["opt"], mac["protein_g"], mac["carbs_g"],
-                    mac["fat_g"], mac["kcal"]))
-    return csv_response("refeicoes.csv",
-                        ["data", "refeicao", "opcao", "proteina_g", "carbo_g", "gordura_g", "kcal"],
-                        out)
+@app.get("/export/registro_alimentar.csv")
+def export_registro():
+    rows = get_conn().execute(
+        "SELECT date, COALESCE(meal,''), description, protein_g, carbs_g, fat_g, kcal, source"
+        " FROM food_log ORDER BY date, id").fetchall()
+    return csv_response(
+        "registro_alimentar.csv",
+        ["data", "refeicao", "descricao", "proteina_g", "carbo_g", "gordura_g", "kcal", "origem"],
+        [tuple(r) for r in rows])
 
 
 @app.get("/export/dieta.csv")

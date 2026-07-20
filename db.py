@@ -96,6 +96,20 @@ CREATE TABLE IF NOT EXISTS chat_message (
     created_at   TEXT NOT NULL,
     active       INTEGER DEFAULT 1
 );
+
+CREATE TABLE IF NOT EXISTS food_log (
+    id          INTEGER PRIMARY KEY,
+    date        TEXT NOT NULL,
+    meal        TEXT,
+    description TEXT NOT NULL,
+    protein_g   REAL DEFAULT 0,
+    carbs_g     REAL DEFAULT 0,
+    fat_g       REAL DEFAULT 0,
+    kcal        REAL DEFAULT 0,
+    option_id   INTEGER REFERENCES meal_option(id),
+    source      TEXT DEFAULT 'manual',
+    created_at  TEXT NOT NULL
+);
 """
 
 

@@ -11,8 +11,8 @@
   ('peso.csv', 'Pesagens', counts.peso ~ ' registros'),
   ('checklist.csv', 'Checklist concluído', counts.checklist ~ ' conclusões'),
   ('treino.csv', 'Séries de treino', counts.treino ~ ' séries'),
-  ('refeicoes.csv', 'Refeições escolhidas', counts.refeicoes ~ ' escolhas'),
-  ('dieta.csv', 'Plano de dieta (opções e itens)', 'referência atual'),
+  ('registro_alimentar.csv', 'Registro alimentar', counts.registro ~ ' lançamentos'),
+  ('dieta.csv', 'Biblioteca (opções e itens)', 'referência atual'),
   ('conversa_coach.csv', 'Conversa com o coach', counts.coach ~ ' mensagens'),
 ] %}
 
@@ -27,6 +27,6 @@
 </a>
 {% endfor %}
 
-<p class="notice">Dica: para pedir uma avaliação ao Claude, envie o peso.csv, o refeicoes.csv e o treino.csv juntos na mensagem — eles carregam todo o histórico.</p>
+<p class="notice">Dica: para pedir uma avaliação ao Claude, envie o peso.csv, o registro_alimentar.csv e o treino.csv juntos na mensagem — eles carregam todo o histórico.</p>
 
 {% endblock %}

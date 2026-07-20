@@ -57,13 +57,20 @@ por água/intestino é normal).
 jantar/fim de semana antes de cortar mais.
 - Seja concreto: cite os números que embasam sua conclusão.
 
+Como funciona o app:
+- A seção Dieta é uma BIBLIOTECA DE RECOMENDAÇÕES (o que comer), com opções e macros \
+de referência — não é o registro do dia.
+- O que o Eduardo REALMENTE comeu vai pro diário alimentar (food_log). get_progress \
+mostra esse registro real por dia (campo "logged", com ids).
+
 Ferramentas:
-- Antes de opinar sobre progresso, chame get_progress. Antes de editar qualquer coisa, \
+- Antes de opinar sobre progresso, chame get_progress. Antes de editar a biblioteca, \
 chame list_plan para pegar os IDs corretos.
-- Você PODE editar direto o cardápio, o treino e as metas com as ferramentas de \
-edição. Sempre que editar, diga em uma frase clara o que mudou (ex.: "troquei a carne \
-moída do jantar por strogonoff fit e recalculei os macros"). O Eduardo pode conferir e \
-reverter nas páginas Dieta/Treino.
+- Quando o Eduardo disser o que comeu, REGISTRE com log_food (estimando os macros) e \
+confirme numa frase o que lançou. Para corrigir, use remove_food_log com o id do get_progress.
+- Você PODE editar direto a biblioteca (cardápio), o treino e as metas com as \
+ferramentas de edição. Sempre que editar, diga em uma frase clara o que mudou. O \
+Eduardo pode conferir e reverter nas páginas Dieta/Treino.
 - Ao criar/editar uma opção de refeição, preencha os macros por item em peso PRONTO \
 (já preparado). Estime valores razoáveis quando ele não der números.
 - Não invente dados de peso ou treino que não estejam no get_progress."""
@@ -87,6 +94,21 @@ TOOLS = [
          "date": {"type": "string", "description": "Data YYYY-MM-DD (padrão: hoje)"},
          "note": {"type": "string"}},
          "required": ["weight_kg"]}},
+    {"name": "log_food",
+     "description": "Registra no diário alimentar do dia algo que o Eduardo comeu, com os "
+                    "macros que você estimar. Use quando ele descrever uma refeição/lanche. "
+                    "Um item por alimento ou agrupado — o que fizer mais sentido.",
+     "input_schema": {"type": "object", "properties": {
+         "description": {"type": "string", "description": "Ex.: '3 ovos mexidos' ou '200g frango + arroz'"},
+         "meal": {"type": "string", "description": "Café da manhã / Almoço / Lanche / Jantar / Extra (se souber)"},
+         "date": {"type": "string", "description": "Data YYYY-MM-DD (padrão: hoje)"},
+         "protein_g": {"type": "number"}, "carbs_g": {"type": "number"},
+         "fat_g": {"type": "number"}, "kcal": {"type": "number"}},
+         "required": ["description", "protein_g", "carbs_g", "fat_g", "kcal"]}},
+    {"name": "remove_food_log",
+     "description": "Remove um lançamento do diário alimentar pelo id (os ids vêm do get_progress).",
+     "input_schema": {"type": "object", "properties": {
+         "id": {"type": "integer"}}, "required": ["id"]}},
     {"name": "add_meal_option",
      "description": "Cria uma nova opção prática para uma refeição (ex.: nova opção de jantar). "
                     "Depois adicione os itens com add_meal_item.",
@@ -160,6 +182,18 @@ def _dispatch(conn, name, args):
             d = args.get("date") or date.today().isoformat()
             actions.log_weight(conn, d, args["weight_kg"], args.get("note"))
             return f"Peso registrado: {args['weight_kg']} kg em {d}.", False
+        if name == "log_food":
+            d = args.get("date") or date.today().isoformat()
+            fid = actions.log_food(
+                conn, d, args.get("meal"), args["description"],
+                args.get("protein_g", 0), args.get("carbs_g", 0),
+                args.get("fat_g", 0), args.get("kcal", 0), source="coach")
+            return (f"Registrado (id={fid}): {args['description']} — "
+                    f"P {round(args.get('protein_g', 0))}g, C {round(args.get('carbs_g', 0))}g, "
+                    f"G {round(args.get('fat_g', 0))}g, {round(args.get('kcal', 0))} kcal."), False
+        if name == "remove_food_log":
+            actions.delete_food_log(conn, args["id"])
+            return "Lançamento removido.", False
         if name == "add_meal_option":
             oid = actions.add_meal_option(conn, args["meal_id"], args["name"], args.get("description", ""))
             return f"Opção criada (option_id={oid}). Adicione os itens com add_meal_item.", False
@@ -249,6 +283,62 @@ def _starts_with_tool_result(msg):
 def reset(conn):
     conn.execute("UPDATE chat_message SET active = 0")
     conn.commit()
+
+
+QUICK_LOG_SYSTEM = (
+    "Você extrai o que a pessoa comeu e estima os macros em peso PRONTO (já preparado), "
+    "em português do Brasil. Retorne um item por alimento, ou agrupado de forma sensata, "
+    "com proteína (g), carbo (g), gordura (g) e kcal estimados. Quando a pessoa indicar o "
+    "horário/refeição, preencha 'meal' (Café da manhã / Almoço / Lanche / Jantar / Extra)."
+)
+
+QUICK_LOG_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "entries": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "meal": {"type": "string"},
+                    "description": {"type": "string"},
+                    "protein_g": {"type": "number"},
+                    "carbs_g": {"type": "number"},
+                    "fat_g": {"type": "number"},
+                    "kcal": {"type": "number"},
+                },
+                "required": ["description", "protein_g", "carbs_g", "fat_g", "kcal"],
+                "additionalProperties": False,
+            },
+        },
+    },
+    "required": ["entries"],
+    "additionalProperties": False,
+}
+
+
+def quick_log(conn, text, d=None):
+    """Registro rápido por texto livre (campo do Hoje): 1 chamada, sem histórico."""
+    if not is_configured():
+        raise RuntimeError("Coach não configurado (defina ANTHROPIC_API_KEY).")
+    d = d or date.today().isoformat()
+    resp = _client.messages.create(
+        model=MODEL, max_tokens=1000,
+        thinking={"type": "disabled"},
+        system=QUICK_LOG_SYSTEM,
+        output_config={"format": {"type": "json_schema", "schema": QUICK_LOG_SCHEMA}},
+        messages=[{"role": "user", "content": text}])
+    data = json.loads("".join(b.text for b in resp.content if b.type == "text"))
+    entries = []
+    for e in data.get("entries", []):
+        fid = actions.log_food(
+            conn, d, e.get("meal"), e["description"],
+            e.get("protein_g", 0), e.get("carbs_g", 0), e.get("fat_g", 0), e.get("kcal", 0),
+            source="quick")
+        entries.append({"id": fid, "meal": e.get("meal"), "description": e["description"],
+                        "protein_g": e.get("protein_g", 0), "carbs_g": e.get("carbs_g", 0),
+                        "fat_g": e.get("fat_g", 0), "kcal": e.get("kcal", 0)})
+    return entries
 
 
 def chat(conn, user_text):

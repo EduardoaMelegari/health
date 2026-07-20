@@ -39,12 +39,21 @@ def option_macros(conn, option_id):
 
 
 def macros_for_date(conn, d):
+    """Soma o que foi REALMENTE registrado no dia (food_log)."""
     row = conn.execute(
-        "SELECT COALESCE(SUM(i.protein_g),0) p, COALESCE(SUM(i.carbs_g),0) c,"
-        " COALESCE(SUM(i.fat_g),0) f, COALESCE(SUM(i.kcal),0) k"
-        " FROM meal_choice ch JOIN meal_item i ON i.option_id = ch.option_id"
-        " WHERE ch.date = ?", (d.isoformat(),)).fetchone()
+        "SELECT COALESCE(SUM(protein_g),0) p, COALESCE(SUM(carbs_g),0) c,"
+        " COALESCE(SUM(fat_g),0) f, COALESCE(SUM(kcal),0) k"
+        " FROM food_log WHERE date = ?", (d.isoformat(),)).fetchone()
     return {"protein_g": row["p"], "carbs_g": row["c"], "fat_g": row["f"], "kcal": row["k"]}
+
+
+def food_log_for_date(conn, d):
+    rows = conn.execute(
+        "SELECT id, meal, description, protein_g, carbs_g, fat_g, kcal"
+        " FROM food_log WHERE date = ? ORDER BY id", (d,)).fetchall()
+    return [{"id": r["id"], "meal": r["meal"], "description": r["description"],
+             "protein_g": r["protein_g"], "carbs_g": r["carbs_g"],
+             "fat_g": r["fat_g"], "kcal": r["kcal"]} for r in rows]
 
 
 def adherence(conn, days):
@@ -228,6 +237,39 @@ def update_targets(conn, **fields):
     return changed
 
 
+# ---------------------------------------------------------------- registro alimentar
+
+def log_food(conn, d, meal, description, protein_g=0, carbs_g=0, fat_g=0, kcal=0,
+             option_id=None, source="manual"):
+    cur = conn.execute(
+        "INSERT INTO food_log (date, meal, description, protein_g, carbs_g, fat_g, kcal,"
+        " option_id, source, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        (d, (meal or "").strip() or None, description.strip(),
+         float(protein_g or 0), float(carbs_g or 0), float(fat_g or 0), float(kcal or 0),
+         option_id, source, datetime.now().isoformat(timespec="seconds")))
+    conn.commit()
+    return cur.lastrowid
+
+
+def log_food_from_option(conn, d, option_id):
+    """Registra a porção fixa de uma recomendação (botão 'comi isso')."""
+    opt = conn.execute(
+        "SELECT o.id, o.name, m.name meal FROM meal_option o"
+        " JOIN meal m ON m.id = o.meal_id WHERE o.id = ?", (option_id,)).fetchone()
+    if opt is None:
+        raise ValueError(f"opção {option_id} não existe")
+    mac = option_macros(conn, option_id)
+    entry_id = log_food(conn, d, opt["meal"], opt["name"],
+                        mac["protein_g"], mac["carbs_g"], mac["fat_g"], mac["kcal"],
+                        option_id=option_id, source="tap")
+    return {"id": entry_id, "meal": opt["meal"], "description": opt["name"], **mac}
+
+
+def delete_food_log(conn, entry_id):
+    conn.execute("DELETE FROM food_log WHERE id = ?", (entry_id,))
+    conn.commit()
+
+
 # ---------------------------------------------------------------- snapshots p/ o coach
 
 def plan_snapshot(conn):
@@ -275,18 +317,17 @@ def progress_snapshot(conn, days=10):
         if consumed["kcal"] == 0 and i > 0:
             continue  # dia sem nada registrado (exceto hoje, que sempre aparece)
         tg = targets_for(di, cfg)
-        chosen = [
-            {"meal": r["meal"], "option": r["option"]}
-            for r in conn.execute(
-                "SELECT m.name meal, o.name option FROM meal_choice ch"
-                " JOIN meal m ON m.id = ch.meal_id JOIN meal_option o ON o.id = ch.option_id"
-                " WHERE ch.date = ? ORDER BY m.sort", (di.isoformat(),))]
+        logged = [
+            {"id": e["id"], "meal": e["meal"], "description": e["description"],
+             "protein_g": round(e["protein_g"]), "carbs_g": round(e["carbs_g"]),
+             "fat_g": round(e["fat_g"]), "kcal": round(e["kcal"])}
+            for e in food_log_for_date(conn, di.isoformat())]
         recent_days.append({
             "date": di.isoformat(), "day_type": tg["day_type"],
             "consumed": {k: round(v) for k, v in consumed.items()},
             "targets": {"kcal": tg["kcal"], "protein_g": tg["protein_g"],
                         "carbs_g": tg["carbs_g"], "fat_g": tg["fat_g"]},
-            "meals_chosen": chosen})
+            "logged": logged})
     last_training = []
     for ex in conn.execute("SELECT * FROM exercise WHERE active = 1 ORDER BY workout, sort, id"):
         last = conn.execute(
