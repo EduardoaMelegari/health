@@ -1,0 +1,73 @@
+{% extends "base.html" %}
+{% block title %}Hoje · Saúde{% endblock %}
+{% block content %}
+
+<div class="page-head">
+  <h1>Hoje</h1>
+  <p class="sub">{{ date_pt }}</p>
+  <div class="chips">
+    {% if workout %}
+      <a class="chip accent" href="/treino?w={{ workout }}">Treino {{ workout }} — academia</a>
+    {% elif is_run_day %}
+      <span class="chip accent">Dia de corrida</span>
+    {% else %}
+      <span class="chip">Descanso</span>
+    {% endif %}
+    {% if adherence is not none %}<span class="chip">Aderência 7d: {{ adherence }}%</span>{% endif %}
+    <span class="chip">Revisão em {{ next_review }}d</span>
+  </div>
+</div>
+
+<section>
+  <div class="card" id="macros">
+    <h2>Macros do dia <span class="sub" style="display:inline">· dia de {{ targets.day_type }}</span></h2>
+    {% for key, label, unit in [('kcal','Calorias',' kcal'), ('protein_g','Proteína',' g'), ('carbs_g','Carbo',' g'), ('fat_g','Gordura',' g')] %}
+    <div class="macro-row">
+      <span class="name">{{ label }}</span>
+      <div class="track"><div class="fill" data-macro-fill="{{ key }}"></div></div>
+      <span class="val" data-macro-val="{{ key }}"></span>
+    </div>
+    {% endfor %}
+    <p class="macro-note" id="macro-note"></p>
+  </div>
+</section>
+
+<section>
+  <h2>Checklist</h2>
+  {% if tasks %}
+    {% for t in tasks %}
+    <button class="task {{ 'done' if t.done }}" onclick="App.toggleTask(this, {{ t.id }}, '{{ today }}')">
+      <span class="box"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12l6 6L20 6"/></svg></span>
+      <span class="title">{{ t.title }}</span>
+      <span class="cat">{{ t.category }}</span>
+    </button>
+    {% endfor %}
+  {% else %}
+    <p class="empty">Nada agendado para hoje.</p>
+  {% endif %}
+</section>
+
+<section>
+  <h2>Refeições — toque na opção que vai fazer</h2>
+  {% for mc in meal_cards %}
+  <div class="card meal" data-meal="{{ mc.row.id }}">
+    <h3>{{ mc.row.name }}</h3>
+    {% for opt in mc.options %}
+    <button class="option {{ 'selected' if mc.chosen == opt.row.id }}"
+            onclick="App.chooseMeal(this, {{ mc.row.id }}, {{ opt.row.id }}, '{{ today }}')">
+      <span class="opt-name"><span class="dot"></span>{{ opt.row.name }}</span>
+      <span class="opt-macros">{{ opt.macros.kcal | round | int }} kcal · P {{ opt.macros.protein_g | round | int }} g · C {{ opt.macros.carbs_g | round | int }} g · G {{ opt.macros.fat_g | round | int }} g</span>
+      <span class="opt-items">{% for i in opt['items'] %}{{ i.food }} {{ i.grams | round | int }} g{{ ' · ' if not loop.last }}{% endfor %}</span>
+      {% if opt.row.description %}<span class="opt-desc">{{ opt.row.description }}</span>{% endif %}
+    </button>
+    {% endfor %}
+  </div>
+  {% endfor %}
+</section>
+
+{% endblock %}
+{% block scripts %}
+<script>
+  App.updateMacros({{ consumed | tojson }}, {{ targets | tojson }});
+</script>
+{% endblock %}

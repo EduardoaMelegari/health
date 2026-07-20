@@ -1,0 +1,203 @@
+{% extends "base.html" %}
+{% block title %}Peso · Saúde{% endblock %}
+{% block content %}
+
+<div class="page-head">
+  <h1>Peso</h1>
+  <p class="sub">Pesagem semanal em jejum, sempre no mesmo dia. Olhe a média, não o número do dia.</p>
+</div>
+
+<div class="tiles">
+  <div class="tile">
+    <div class="k">Atual</div>
+    <div class="v">{{ latest.weight_kg | replace('.', ',') if latest else '—' }}<small> kg</small></div>
+  </div>
+  <div class="tile">
+    <div class="k">IMC</div>
+    <div class="v">{{ bmi | replace('.', ',') if bmi else '—' }}</div>
+  </div>
+  <div class="tile">
+    <div class="k">Ritmo</div>
+    <div class="v">{{ rate | replace('.', ',') if rate is not none else '—' }}<small> kg/sem</small></div>
+  </div>
+</div>
+
+{% if next_milestone %}
+<p class="notice" style="margin:0 0 14px">
+  Próximo marco: <strong>{{ next_milestone | round | int }} kg</strong>
+  {% if weeks_to %} — nesse ritmo, em ~{{ weeks_to }} semana{{ 's' if weeks_to != 1 }}{% endif %}.
+</p>
+{% endif %}
+
+<div class="card">
+  <h2>Registrar pesagem</h2>
+  <div class="row">
+    <div class="field">
+      <label for="w-date">Data</label>
+      <input type="date" id="w-date" value="{{ today }}">
+    </div>
+    <div class="field">
+      <label for="w-kg">Peso (kg)</label>
+      <input type="number" id="w-kg" step="0.1" min="30" max="250" inputmode="decimal" placeholder="93,0">
+    </div>
+  </div>
+  <div class="field">
+    <label for="w-note">Nota (opcional)</label>
+    <input type="text" id="w-note" placeholder="ex.: pós refeição livre">
+  </div>
+  <button class="btn" onclick="saveWeight()">Salvar</button>
+</div>
+
+<div class="card">
+  <h2>Evolução</h2>
+  {% if rows | length >= 2 %}
+    <div style="position:relative; height:260px">
+      <canvas id="chart" role="img" aria-label="Gráfico da evolução do peso com média móvel"></canvas>
+    </div>
+  {% else %}
+    <p class="empty">Registre pelo menos duas pesagens para ver o gráfico.</p>
+  {% endif %}
+</div>
+
+{% if rows %}
+<details class="card">
+  <summary>Histórico ({{ rows | length }})</summary>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Data</th><th>Peso</th><th>Nota</th><th></th></tr></thead>
+      <tbody>
+        {% for r in rows | reverse %}
+        <tr>
+          <td>{{ r.date[8:] }}/{{ r.date[5:7] }}/{{ r.date[2:4] }}</td>
+          <td>{{ r.weight_kg | replace('.', ',') }} kg</td>
+          <td>{{ r.note or '' }}</td>
+          <td><button class="btn-danger" onclick="deleteWeight('{{ r.date }}')">excluir</button></td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</details>
+{% endif %}
+
+{% endblock %}
+{% block scripts %}
+<script src="{{ url_for('static', filename='chart.umd.js') }}"></script>
+<script>
+async function saveWeight() {
+  const kg = document.getElementById("w-kg").value.replace(",", ".");
+  if (!kg) return;
+  await App.post("/api/weight", {
+    date: document.getElementById("w-date").value,
+    weight_kg: parseFloat(kg),
+    note: document.getElementById("w-note").value,
+  });
+  location.reload();
+}
+async function deleteWeight(date) {
+  if (!confirm("Excluir a pesagem de " + date + "?")) return;
+  await App.post("/api/weight/delete", { date });
+  location.reload();
+}
+
+const canvas = document.getElementById("chart");
+if (canvas) initChart();
+
+async function initChart() {
+  const data = await (await fetch("/api/weight/data")).json();
+  const css = getComputedStyle(document.documentElement);
+  const tok = (n) => css.getPropertyValue(n).trim();
+  const forced = document.documentElement.dataset.theme;
+  const dark = forced ? forced === "dark" : matchMedia("(prefers-color-scheme: dark)").matches;
+  const seriesPeso = dark ? "#3987e5" : "#2a78d6";
+  const seriesMedia = "#008300";
+
+  const labels = data.dates.map((d) => d.slice(8) + "/" + d.slice(5, 7));
+  const all = data.weights.concat(data.moving);
+  const visibleMilestones = data.milestones.filter(
+    (m) => m >= Math.min(...all) - 2 && m <= Math.max(...all) + 1
+  );
+  const fmtKg = (v) => v.toLocaleString("pt-BR", { minimumFractionDigits: 1, maximumFractionDigits: 1 }) + " kg";
+
+  const milestoneLines = {
+    id: "milestoneLines",
+    afterDatasetsDraw(chart) {
+      const { ctx, chartArea, scales } = chart;
+      ctx.save();
+      ctx.strokeStyle = tok("--muted");
+      ctx.fillStyle = tok("--muted");
+      ctx.setLineDash([5, 5]);
+      ctx.lineWidth = 1;
+      ctx.font = "11px system-ui, sans-serif";
+      for (const m of visibleMilestones) {
+        const y = scales.y.getPixelForValue(m);
+        if (y < chartArea.top || y > chartArea.bottom) continue;
+        ctx.beginPath();
+        ctx.moveTo(chartArea.left, y);
+        ctx.lineTo(chartArea.right, y);
+        ctx.stroke();
+        ctx.fillText(m + " kg", chartArea.left + 4, y - 4);
+      }
+      ctx.restore();
+    },
+  };
+
+  new Chart(canvas, {
+    type: "line",
+    data: {
+      labels,
+      datasets: [
+        {
+          label: "Peso",
+          data: data.weights,
+          borderColor: seriesPeso,
+          backgroundColor: seriesPeso,
+          borderWidth: 2,
+          pointRadius: 4,
+          pointHoverRadius: 6,
+          tension: 0.25,
+        },
+        {
+          label: "Média móvel (4)",
+          data: data.moving,
+          borderColor: seriesMedia,
+          backgroundColor: seriesMedia,
+          borderWidth: 2,
+          borderDash: [7, 4],
+          pointRadius: 0,
+          pointHoverRadius: 5,
+          tension: 0.3,
+        },
+      ],
+    },
+    options: {
+      maintainAspectRatio: false,
+      interaction: { mode: "index", intersect: false },
+      plugins: {
+        legend: {
+          labels: { color: tok("--text-2"), usePointStyle: true, pointStyle: "line", boxWidth: 24, font: { size: 12 } },
+        },
+        tooltip: {
+          callbacks: { label: (c) => ` ${c.dataset.label}: ${fmtKg(c.parsed.y)}` },
+        },
+      },
+      scales: {
+        x: {
+          grid: { display: false },
+          border: { color: tok("--hair") },
+          ticks: { color: tok("--muted"), maxTicksLimit: 8, font: { size: 11 } },
+        },
+        y: {
+          suggestedMin: Math.min(...all, ...visibleMilestones) - 0.5,
+          suggestedMax: Math.max(...all) + 0.5,
+          grid: { color: tok("--hair") },
+          border: { display: false },
+          ticks: { color: tok("--muted"), font: { size: 11 }, callback: (v) => v.toLocaleString("pt-BR") },
+        },
+      },
+    },
+    plugins: [milestoneLines],
+  });
+}
+</script>
+{% endblock %}

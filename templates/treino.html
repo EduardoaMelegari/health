@@ -1,0 +1,136 @@
+{% extends "base.html" %}
+{% block title %}Treino · Saúde{% endblock %}
+{% block content %}
+
+<div class="page-head">
+  <h1>Treino</h1>
+  <p class="sub">Registre as cargas de hoje. Completou todas as séries na meta? A sugestão sobe 2,5 kg.</p>
+</div>
+
+<div class="workout-tabs">
+  {% for w in ['A', 'B', 'C'] %}
+  <a href="/treino?w={{ w }}" class="{{ 'active' if workout == w }}">Treino {{ w }}</a>
+  {% endfor %}
+</div>
+
+{% for c in cards %}
+<div class="card" data-ex="{{ c.row.id }}">
+  <div style="display:flex; align-items:baseline; gap:8px">
+    <h2 style="margin:0">{{ c.row.name }}</h2>
+    <span class="sub">{{ c.row.target_sets }}×{{ c.row.target_reps }}</span>
+  </div>
+
+  {% if c.last_sets %}
+  <p class="last-info">
+    Última ({{ c.last_date[8:] }}/{{ c.last_date[5:7] }}):
+    {% for s in c.last_sets %}{{ (s.weight_kg | replace('.', ',')) if s.weight_kg is not none else '—' }}×{{ s.reps or '—' }}{{ ', ' if not loop.last }}{% endfor %}
+  </p>
+  {% endif %}
+  {% if c.suggestion %}<p class="suggestion">Sugestão de hoje: {{ c.suggestion | replace('.', ',') }} kg</p>{% endif %}
+
+  <div class="sets">
+    <div class="set-grid" style="margin-top:10px">
+      <span class="n"></span><span class="n">kg</span><span class="n">reps</span>
+    </div>
+    {% set prefill = c.today if c.today else [] %}
+    {% set n_rows = [prefill | length, c.row.target_sets] | max %}
+    {% for i in range(n_rows) %}
+    <div class="set-grid set-row">
+      <span class="n">{{ i + 1 }}</span>
+      <input type="number" step="0.5" inputmode="decimal" class="in-kg"
+             value="{{ prefill[i].weight_kg if i < prefill | length and prefill[i].weight_kg is not none else '' }}"
+             placeholder="{{ c.suggestion | replace('.', ',') if c.suggestion else 'kg' }}">
+      <input type="number" step="1" inputmode="numeric" class="in-reps"
+             value="{{ prefill[i].reps if i < prefill | length and prefill[i].reps is not none else '' }}"
+             placeholder="{{ c.row.target_reps }}">
+    </div>
+    {% endfor %}
+  </div>
+
+  <div class="row" style="margin-top:12px">
+    <button class="btn-ghost" onclick="addRow(this.closest('.card'))">+ série</button>
+    <button class="btn btn-sm" onclick="saveSets(this, {{ c.row.id }})">Salvar</button>
+  </div>
+
+  <details style="margin-top:10px">
+    <summary>Editar exercício</summary>
+    <div class="field" style="margin-top:8px">
+      <input type="text" class="ed-name" value="{{ c.row.name }}">
+    </div>
+    <div class="row">
+      <div class="field"><label>Séries</label><input type="number" class="ed-sets" value="{{ c.row.target_sets }}"></div>
+      <div class="field"><label>Reps alvo</label><input type="number" class="ed-reps" value="{{ c.row.target_reps }}"></div>
+    </div>
+    <div class="row">
+      <button class="btn-ghost" onclick="updateExercise(this.closest('.card'), {{ c.row.id }})">Atualizar</button>
+      <button class="btn-danger" onclick="removeExercise({{ c.row.id }}, '{{ c.row.name }}')">Remover</button>
+    </div>
+  </details>
+</div>
+{% endfor %}
+
+{% if not cards %}<p class="empty">Nenhum exercício no treino {{ workout }}.</p>{% endif %}
+
+<div class="card">
+  <h2>Adicionar exercício ao treino {{ workout }}</h2>
+  <div class="field"><input type="text" id="new-name" placeholder="Nome do exercício"></div>
+  <div class="row">
+    <div class="field"><label>Séries</label><input type="number" id="new-sets" value="4"></div>
+    <div class="field"><label>Reps alvo</label><input type="number" id="new-reps" value="8"></div>
+  </div>
+  <button class="btn" onclick="addExercise()">Adicionar</button>
+</div>
+
+{% endblock %}
+{% block scripts %}
+<script>
+const DATE = "{{ date }}";
+const WORKOUT = "{{ workout }}";
+
+function addRow(card) {
+  const rows = card.querySelectorAll(".set-row");
+  const clone = rows[rows.length - 1].cloneNode(true);
+  clone.querySelector(".n").textContent = rows.length + 1;
+  clone.querySelectorAll("input").forEach((i) => (i.value = ""));
+  rows[rows.length - 1].after(clone);
+}
+
+async function saveSets(btn, exId) {
+  const card = btn.closest(".card");
+  const sets = [...card.querySelectorAll(".set-row")].map((r) => ({
+    weight_kg: r.querySelector(".in-kg").value.replace(",", "."),
+    reps: r.querySelector(".in-reps").value,
+  }));
+  await App.post("/api/sets", { exercise_id: exId, date: DATE, sets });
+  btn.textContent = "Salvo ✓";
+  setTimeout(() => (btn.textContent = "Salvar"), 1500);
+}
+
+async function addExercise() {
+  const name = document.getElementById("new-name").value.trim();
+  if (!name) return;
+  await App.post("/api/exercise", {
+    workout: WORKOUT,
+    name,
+    target_sets: document.getElementById("new-sets").value,
+    target_reps: document.getElementById("new-reps").value,
+  });
+  location.reload();
+}
+
+async function updateExercise(card, exId) {
+  await App.post("/api/exercise/" + exId, {
+    name: card.querySelector(".ed-name").value,
+    target_sets: card.querySelector(".ed-sets").value,
+    target_reps: card.querySelector(".ed-reps").value,
+  });
+  location.reload();
+}
+
+async function removeExercise(exId, name) {
+  if (!confirm('Remover "' + name + '" do treino? O histórico de cargas é mantido.')) return;
+  await App.post("/api/exercise/" + exId, { delete: true });
+  location.reload();
+}
+</script>
+{% endblock %}

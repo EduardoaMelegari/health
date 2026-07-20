@@ -1,0 +1,113 @@
+{% extends "base.html" %}
+{% block title %}Coach · Saúde{% endblock %}
+{% block content %}
+
+<div class="page-head">
+  <h1>Coach</h1>
+  <p class="sub">Peça um feedback do seu progresso ou ajustes no plano — o coach lê seu peso, aderência e macros e pode editar cardápio, treino e metas.</p>
+</div>
+
+{% if not configured %}
+<div class="card">
+  <p><strong>Coach inativo.</strong> Defina a variável de ambiente <code>ANTHROPIC_API_KEY</code> no servidor e reinicie o app para ativar o chat. O resto do app funciona normalmente.</p>
+</div>
+{% else %}
+
+<div id="chat">
+  {% for m in history %}
+  <div class="bubble {{ m.role }}">{{ m.text }}</div>
+  {% endfor %}
+</div>
+
+{% if not history %}
+<div class="suggestions" id="suggestions">
+  <button class="btn-ghost btn-sm" onclick="Coach.suggest(this)">Como está meu progresso?</button>
+  <button class="btn-ghost btn-sm" onclick="Coach.suggest(this)">Estou no ritmo pra bater o próximo marco?</button>
+  <button class="btn-ghost btn-sm" onclick="Coach.suggest(this)">Sugere uma opção nova de jantar prático</button>
+</div>
+{% endif %}
+
+<form class="composer" onsubmit="Coach.send(event)">
+  <textarea id="msg" rows="1" placeholder="Escreva pro coach…" autocomplete="off"
+            oninput="Coach.autogrow(this)" onkeydown="Coach.onKey(event)"></textarea>
+  <button class="btn send" type="submit" id="send" aria-label="Enviar">
+    <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 2 11 13M22 2l-7 20-4-9-9-4 20-7z"/></svg>
+  </button>
+</form>
+
+<button class="btn-danger" style="margin:4px auto 0;display:block" onclick="Coach.reset()">Nova conversa</button>
+
+{% endif %}
+
+{% endblock %}
+{% block scripts %}
+<script>
+const Coach = {
+  el: () => document.getElementById("chat"),
+
+  autogrow(t) { t.style.height = "auto"; t.style.height = Math.min(t.scrollHeight, 140) + "px"; },
+
+  onKey(e) {
+    if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); Coach.send(e); }
+  },
+
+  suggest(btn) {
+    document.getElementById("msg").value = btn.textContent;
+    Coach.send(new Event("suggest"));
+  },
+
+  addBubble(role, text) {
+    const div = document.createElement("div");
+    div.className = "bubble " + role;
+    div.textContent = text;
+    Coach.el().appendChild(div);
+    div.scrollIntoView({ behavior: "smooth", block: "end" });
+    return div;
+  },
+
+  async send(e) {
+    if (e && e.preventDefault) e.preventDefault();
+    const input = document.getElementById("msg");
+    const text = input.value.trim();
+    if (!text) return;
+    const sug = document.getElementById("suggestions");
+    if (sug) sug.remove();
+
+    input.value = "";
+    input.style.height = "auto";
+    Coach.addBubble("user", text);
+
+    const send = document.getElementById("send");
+    send.disabled = true;
+    const typing = Coach.addBubble("assistant typing", "digitando…");
+
+    try {
+      const res = await fetch("/api/chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ message: text }),
+      });
+      const data = await res.json();
+      typing.remove();
+      if (!res.ok) {
+        Coach.addBubble("assistant error", data.error || "Erro inesperado.");
+      } else {
+        Coach.addBubble("assistant", data.reply);
+      }
+    } catch {
+      typing.remove();
+      Coach.addBubble("assistant error", "Sem conexão com o servidor.");
+    } finally {
+      send.disabled = false;
+      input.focus();
+    }
+  },
+
+  async reset() {
+    if (!confirm("Apagar esta conversa e começar de novo?")) return;
+    await fetch("/api/chat/reset", { method: "POST" });
+    location.reload();
+  },
+};
+</script>
+{% endblock %}

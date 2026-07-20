@@ -1,0 +1,141 @@
+{% extends "base.html" %}
+{% block title %}Dieta · Saúde{% endblock %}
+{% block content %}
+
+<div class="page-head">
+  <h1>Dieta</h1>
+  <p class="sub">Quantidades em peso PRONTO (já preparado). O fator cru converte para a lista de compras.</p>
+</div>
+
+<div class="card">
+  <h2>Lista de compras da semana</h2>
+  <p class="sub" style="margin-bottom:10px">Somada das escolhas dos últimos 7 dias — dias sem escolha usam a primeira opção de cada refeição. Quantidades em peso CRU.</p>
+  <button class="btn" onclick="loadShopping()">Gerar lista</button>
+  <div id="shopping" style="margin-top:10px"></div>
+</div>
+
+{% for m in meals %}
+<div class="card meal">
+  <h3 style="margin-bottom:6px">{{ m.row.name }}</h3>
+
+  {% for opt in m.options %}
+  <details style="border-top:1px solid var(--hair); padding:4px 0">
+    <summary>
+      {{ opt.row.name }}
+      <span class="sub" style="display:inline"> · {{ opt.macros.kcal | round | int }} kcal · P {{ opt.macros.protein_g | round | int }}g</span>
+    </summary>
+    {% if opt.row.description %}<p class="notice" style="margin-top:4px">{{ opt.row.description }}</p>{% endif %}
+
+    <div class="table-wrap" style="margin-top:8px">
+      <table>
+        <thead>
+          <tr><th>Alimento</th><th>g pronto</th><th>fator</th><th>P</th><th>C</th><th>G</th><th>kcal</th><th></th></tr>
+        </thead>
+        <tbody>
+          {% for i in opt['items'] %}
+          <tr data-item="{{ i.id }}">
+            <td>{{ i.food }}</td>
+            <td><input class="i-grams" type="number" step="1" value="{{ i.grams | round | int }}" style="width:64px;padding:6px"></td>
+            <td><input class="i-raw" type="number" step="0.05" value="{{ i.raw_factor }}" style="width:60px;padding:6px"></td>
+            <td><input class="i-p" type="number" step="0.5" value="{{ i.protein_g }}" style="width:56px;padding:6px"></td>
+            <td><input class="i-c" type="number" step="0.5" value="{{ i.carbs_g }}" style="width:56px;padding:6px"></td>
+            <td><input class="i-f" type="number" step="0.5" value="{{ i.fat_g }}" style="width:56px;padding:6px"></td>
+            <td><input class="i-k" type="number" step="1" value="{{ i.kcal | round | int }}" style="width:64px;padding:6px"></td>
+            <td style="white-space:nowrap">
+              <button class="btn-ghost" style="padding:5px 9px" onclick="saveItem(this.closest('tr'))">✓</button>
+              <button class="btn-danger" onclick="deleteItem({{ i.id }}, '{{ i.food }}')">×</button>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+
+    <div class="row" style="margin-top:8px">
+      <input type="text" class="new-food" placeholder="Novo alimento" style="flex:2">
+      <input type="number" class="new-grams" placeholder="g" style="flex:1">
+      <button class="btn-ghost" onclick="addItem(this, {{ opt.row.id }})">+ item</button>
+    </div>
+
+    <details style="margin-top:8px">
+      <summary>Editar opção</summary>
+      <div class="field" style="margin-top:6px"><input type="text" class="o-name" value="{{ opt.row.name }}"></div>
+      <div class="field"><input type="text" class="o-desc" value="{{ opt.row.description or '' }}" placeholder="Dica de preparo"></div>
+      <div class="row">
+        <button class="btn-ghost" onclick="updateOption(this, {{ opt.row.id }})">Atualizar</button>
+        <button class="btn-danger" onclick="removeOption({{ opt.row.id }}, '{{ opt.row.name }}')">Remover opção</button>
+      </div>
+    </details>
+  </details>
+  {% endfor %}
+
+  <div class="row" style="margin-top:10px">
+    <input type="text" class="new-opt" placeholder="Nova opção para {{ m.row.name | lower }}" style="flex:2">
+    <button class="btn-ghost" onclick="addOption(this, {{ m.row.id }})">+ opção</button>
+  </div>
+</div>
+{% endfor %}
+
+{% endblock %}
+{% block scripts %}
+<script>
+async function loadShopping() {
+  const r = await (await fetch("/api/shopping-list")).json();
+  const el = document.getElementById("shopping");
+  if (!r.items.length) { el.innerHTML = '<p class="empty">Nada para comprar.</p>'; return; }
+  el.innerHTML = '<div class="table-wrap"><table><thead><tr><th>Alimento</th><th>Quantidade (cru)</th></tr></thead><tbody>' +
+    r.items.map((i) => {
+      const q = i.grams_raw >= 1000
+        ? (i.grams_raw / 1000).toLocaleString("pt-BR", { maximumFractionDigits: 2 }) + " kg"
+        : i.grams_raw + " g";
+      return `<tr><td>${i.food}</td><td>${q}</td></tr>`;
+    }).join("") + "</tbody></table></div>";
+}
+
+async function saveItem(tr) {
+  const v = (cls) => tr.querySelector(cls).value.replace(",", ".");
+  await App.post("/api/item/" + tr.dataset.item, {
+    grams: v(".i-grams"), raw_factor: v(".i-raw"), protein_g: v(".i-p"),
+    carbs_g: v(".i-c"), fat_g: v(".i-f"), kcal: v(".i-k"),
+  });
+  tr.style.opacity = 0.4;
+  setTimeout(() => (tr.style.opacity = 1), 400);
+}
+
+async function deleteItem(id, food) {
+  if (!confirm('Excluir "' + food + '"?')) return;
+  await App.post("/api/item/" + id, { delete: true });
+  location.reload();
+}
+
+async function addItem(btn, optionId) {
+  const row = btn.closest(".row");
+  const food = row.querySelector(".new-food").value.trim();
+  if (!food) return;
+  await App.post("/api/item", { option_id: optionId, food, grams: row.querySelector(".new-grams").value || 0 });
+  location.reload();
+}
+
+async function updateOption(btn, optId) {
+  const d = btn.closest("details");
+  await App.post("/api/option/" + optId, {
+    name: d.querySelector(".o-name").value,
+    description: d.querySelector(".o-desc").value,
+  });
+  location.reload();
+}
+
+async function removeOption(optId, name) {
+  if (!confirm('Remover a opção "' + name + '"? O histórico de escolhas é mantido.')) return;
+  await App.post("/api/option/" + optId, { delete: true });
+  location.reload();
+}
+
+async function addOption(btn, mealId) {
+  const input = btn.closest(".row").querySelector(".new-opt");
+  if (!input.value.trim()) return;
+  await App.post("/api/option", { meal_id: mealId, name: input.value.trim() });
+  location.reload();
+}
+</script>
+{% endblock %}

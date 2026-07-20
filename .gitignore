@@ -1,0 +1,16 @@
+# banco de dados (dados pessoais + gerado em runtime)
+data/
+*.db
+
+# python
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# segredos
+.env
+
+# so
+.DS_Store
+Thumbs.db

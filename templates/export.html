@@ -1,0 +1,32 @@
+{% extends "base.html" %}
+{% block title %}Exportar · Saúde{% endblock %}
+{% block content %}
+
+<div class="page-head">
+  <h1>Exportar</h1>
+  <p class="sub">CSV com separador ";" — abre direto no Excel e serve para levar o histórico para qualquer conversa.</p>
+</div>
+
+{% set files = [
+  ('peso.csv', 'Pesagens', counts.peso ~ ' registros'),
+  ('checklist.csv', 'Checklist concluído', counts.checklist ~ ' conclusões'),
+  ('treino.csv', 'Séries de treino', counts.treino ~ ' séries'),
+  ('refeicoes.csv', 'Refeições escolhidas', counts.refeicoes ~ ' escolhas'),
+  ('dieta.csv', 'Plano de dieta (opções e itens)', 'referência atual'),
+  ('conversa_coach.csv', 'Conversa com o coach', counts.coach ~ ' mensagens'),
+] %}
+
+{% for file, label, meta in files %}
+<a class="card" style="display:flex; align-items:center; gap:14px; text-decoration:none; color:inherit"
+   href="/export/{{ file }}" download>
+  <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v11M7 10l5 5 5-5"/><path d="M4 21h16"/></svg>
+  <span style="flex:1">
+    <strong>{{ label }}</strong><br>
+    <span class="sub">{{ file }} · {{ meta }}</span>
+  </span>
+</a>
+{% endfor %}
+
+<p class="notice">Dica: para pedir uma avaliação ao Claude, envie o peso.csv, o refeicoes.csv e o treino.csv juntos na mensagem — eles carregam todo o histórico.</p>
+
+{% endblock %}
