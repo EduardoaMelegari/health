@@ -20,7 +20,7 @@ def day_label(iso):
         return "Ontem"
     return f"{_WD[d.weekday()].capitalize()}, {d.day} de {_MO[d.month - 1]}"
 
-MODEL = os.environ.get("ANTHROPIC_MODEL", "claude-opus-4-8")
+MODEL = os.environ.get("ANTHROPIC_MODEL", "claude-sonnet-5")
 MAX_TOKENS = 2000
 MAX_TOOL_ITERATIONS = 8
 HISTORY_LIMIT = 20  # mensagens recarregadas por turno (controla custo/contexto)
@@ -46,7 +46,7 @@ Contexto fixo do plano (da montagem original):
 - Metas base: ~2450 kcal em dia de treino, ~2200 no fim de semana; 170–185 g de \
 proteína; ~80 g de gordura; ~270 g de carbo em dia de treino (menos no fds).
 - Rotina: seg/qua/sex academia (treinos A/B/C), ter/qui corrida, fim de semana \
-descanso + preparo de marmitas. Pesagem semanal em jejum na segunda.
+descanso + preparo de marmitas. Pesagem diária em jejum de manhã (olhe a média móvel, não o número do dia).
 - Regras: proteína em toda refeição; bebidas sem açúcar; fome fora de hora = fruta, \
 ovo ou iogurte; reavaliação a cada 28 dias.
 

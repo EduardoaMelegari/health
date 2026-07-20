@@ -71,12 +71,22 @@ def weight_stats(conn, cfg):
     milestones = [float(x) for x in cfg.get("milestones", "").split(",") if x]
     latest = rows[-1] if rows else None
     bmi = round(latest["weight_kg"] / height ** 2, 1) if latest else None
+
+    # média móvel de 4 pontos: suaviza a oscilação diária de água/intestino
+    weights = [r["weight_kg"] for r in rows]
+    moving = []
+    for i in range(len(weights)):
+        window = weights[max(0, i - 3):i + 1]
+        moving.append(round(sum(window) / len(window), 2))
+
+    # ritmo a partir da MÉDIA MÓVEL (não dos pontos crus), reduzindo o ruído
     rate = None
     if len(rows) >= 2:
         recent = rows[-4:]
         span = (parse_date(recent[-1]["date"]) - parse_date(recent[0]["date"])).days
         if span > 0:
-            rate = round((recent[-1]["weight_kg"] - recent[0]["weight_kg"]) / (span / 7), 2)
+            rate = round((moving[-1] - moving[-len(recent)]) / (span / 7), 2)
+
     next_milestone = weeks_to = None
     if latest:
         below = [m for m in milestones if m < latest["weight_kg"]]
@@ -84,11 +94,6 @@ def weight_stats(conn, cfg):
             next_milestone = max(below)
             if rate and rate < 0:
                 weeks_to = round((latest["weight_kg"] - next_milestone) / -rate)
-    weights = [r["weight_kg"] for r in rows]
-    moving = []
-    for i in range(len(weights)):
-        window = weights[max(0, i - 3):i + 1]
-        moving.append(round(sum(window) / len(window), 2))
     return {
         "history": [{"date": r["date"], "weight_kg": r["weight_kg"]} for r in rows],
         "moving_avg": moving,

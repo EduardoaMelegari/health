@@ -15,14 +15,16 @@ CONFIG = {
     "kcal_descanso": "2200",
     "protein_g": "175",
     "fat_g": "80",
-    "carb_treino": "270",
-    "carb_descanso": "210",
+    # carbo = restante das calorias (kcal - proteína*4 - gordura*9) / 4,
+    # para os macros somarem a meta calórica do dia
+    "carb_treino": "258",
+    "carb_descanso": "195",
     "review_days": "28",
 }
 
 # weekdays: segunda=0 ... domingo=6
 TASKS = [
-    ("Pesagem em jejum", "revisao", "0", 0),
+    ("Pesagem em jejum (manhã)", "revisao", "0,1,2,3,4,5,6", 0),
     ("Treino A — academia", "treino", "0", 1),
     ("Corrida", "treino", "1,3", 1),
     ("Treino B — academia", "treino", "2", 1),

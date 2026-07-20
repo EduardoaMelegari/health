@@ -114,30 +114,13 @@ def hoje():
 @app.route("/peso")
 def peso():
     conn = get_conn()
-    cfg = get_config()
     rows = conn.execute("SELECT * FROM weight_log ORDER BY date").fetchall()
-    height = float(cfg.get("height_m", 1.85))
-    milestones = [float(x) for x in cfg.get("milestones", "").split(",") if x]
-
-    latest = rows[-1] if rows else None
-    bmi = round(latest["weight_kg"] / height ** 2, 1) if latest else None
-    rate = None
-    if len(rows) >= 2:
-        recent = rows[-4:]
-        span = (parse_date(recent[-1]["date"]) - parse_date(recent[0]["date"])).days
-        if span > 0:
-            rate = round((recent[-1]["weight_kg"] - recent[0]["weight_kg"]) / (span / 7), 2)
-    next_milestone = None
-    weeks_to = None
-    if latest:
-        below = [m for m in milestones if m < latest["weight_kg"]]
-        if below:
-            next_milestone = max(below)
-            if rate and rate < 0:
-                weeks_to = round((latest["weight_kg"] - next_milestone) / -rate)
+    stats = actions.weight_stats(conn, get_config())
     return render_template(
-        "peso.html", page="peso", today=today_str(), rows=rows, bmi=bmi,
-        rate=rate, latest=latest, next_milestone=next_milestone, weeks_to=weeks_to)
+        "peso.html", page="peso", today=today_str(), rows=rows,
+        latest=rows[-1] if rows else None, bmi=stats["bmi"],
+        rate=stats["rate_kg_per_week"], next_milestone=stats["next_milestone_kg"],
+        weeks_to=stats["weeks_to_milestone"])
 
 
 @app.route("/treino")

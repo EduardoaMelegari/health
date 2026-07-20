@@ -58,13 +58,14 @@ $env:ANTHROPIC_API_KEY = "sk-ant-..."
 
 # Docker: crie um .env ao lado do docker-compose.yml
 ANTHROPIC_API_KEY=sk-ant-...
-ANTHROPIC_MODEL=claude-opus-4-8   # opcional; troque por claude-sonnet-5 p/ reduzir custo
+ANTHROPIC_MODEL=claude-sonnet-5   # padrão; troque por claude-opus-4-8 p/ máxima qualidade
 ```
 
 Sem a chave, o resto do app funciona normalmente e a aba Coach mostra um aviso de
 configuração. O coach aplica edições direto no plano (tudo reversível nas páginas
-Dieta/Treino) e a conversa fica salva no SQLite (exportável). Custo aproximado no
-Opus 4.8: alguns centavos de dólar por mensagem.
+Dieta/Treino) e a conversa fica salva no SQLite (exportável). O padrão é o
+`claude-sonnet-5` (bom custo-benefício, ~metade do preço do Opus); troque para
+`claude-opus-4-8` se quiser o feedback mais aprofundado.
 
 ## Ajustes
 
