@@ -220,6 +220,7 @@ tr:last-child td { border-bottom: 0; }
 }
 .workout-tabs a.active { background: var(--accent); color: #fff; border-color: transparent; }
 .set-grid { display: grid; grid-template-columns: 28px 1fr 1fr; gap: 8px; align-items: center; margin-top: 8px; }
+.set-grid.time { grid-template-columns: 28px 1fr; }  /* exercício por tempo: sem coluna de kg */
 .set-grid .n { color: var(--muted); font-size: 0.8rem; text-align: center; }
 .last-info { font-size: 0.8rem; color: var(--muted); margin-top: 2px; }
 .suggestion { font-size: 0.8rem; color: var(--good-text); font-weight: 600; margin-top: 2px; }

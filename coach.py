@@ -149,15 +149,20 @@ TOOLS = [
      "input_schema": {"type": "object", "properties": {
          "workout": {"type": "string", "enum": ["A", "B", "C"]},
          "name": {"type": "string"},
-         "target_sets": {"type": "integer"}, "target_reps": {"type": "integer"}},
+         "target_sets": {"type": "integer"}, "target_reps": {"type": "integer"},
+         "kind": {"type": "string", "enum": ["weight", "time"],
+                  "description": "'weight' (kg × reps, padrão) ou 'time' (isométrico por "
+                                 "segundos, sem carga — ex.: prancha; target_reps = segundos)"}},
          "required": ["workout", "name"]}},
     {"name": "update_exercise",
-     "description": "Muda nome/séries/reps de um exercício, ou remove (delete=true). Só envie "
-                    "os campos que quiser mudar.",
+     "description": "Muda nome/séries/reps/tipo de um exercício, ou remove (delete=true). Só "
+                    "envie os campos que quiser mudar.",
      "input_schema": {"type": "object", "properties": {
          "exercise_id": {"type": "integer"},
          "name": {"type": "string"},
          "target_sets": {"type": "integer"}, "target_reps": {"type": "integer"},
+         "kind": {"type": "string", "enum": ["weight", "time"],
+                  "description": "'weight' (kg × reps) ou 'time' (segundos, sem carga)"},
          "delete": {"type": "boolean"}},
          "required": ["exercise_id"]}},
     {"name": "update_targets",
@@ -215,12 +220,13 @@ def _dispatch(conn, name, args):
             return "Item atualizado.", False
         if name == "add_exercise":
             eid = actions.add_exercise(conn, args["workout"], args["name"],
-                                       args.get("target_sets", 4), args.get("target_reps", 8))
+                                       args.get("target_sets", 4), args.get("target_reps", 8),
+                                       args.get("kind"))
             return f"Exercício adicionado ao treino {args['workout']} (exercise_id={eid}).", False
         if name == "update_exercise":
             actions.update_exercise(conn, args["exercise_id"], args.get("name"),
                                     args.get("target_sets"), args.get("target_reps"),
-                                    args.get("delete", False))
+                                    args.get("delete", False), args.get("kind"))
             return "Exercício atualizado.", False
         if name == "update_targets":
             changed = actions.update_targets(conn, **{k: v for k, v in args.items()})

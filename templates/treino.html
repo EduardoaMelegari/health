@@ -14,35 +14,42 @@
 </div>
 
 {% for c in cards %}
+{% set is_time = c.row.kind == 'time' %}
 <div class="card" data-ex="{{ c.row.id }}">
   <div style="display:flex; align-items:baseline; gap:8px">
     <h2 style="margin:0">{{ c.row.name }}</h2>
-    <span class="sub">{{ c.row.target_sets }}×{{ c.row.target_reps }}</span>
+    <span class="sub">{{ c.row.target_sets }}×{{ c.row.target_reps }}{{ ' s' if is_time }}</span>
   </div>
 
   {% if c.last_sets %}
   <p class="last-info">
     Última ({{ c.last_date[8:] }}/{{ c.last_date[5:7] }}):
-    {% for s in c.last_sets %}{{ (s.weight_kg | replace('.', ',')) if s.weight_kg is not none else '—' }}×{{ s.reps or '—' }}{{ ', ' if not loop.last }}{% endfor %}
+    {% for s in c.last_sets -%}
+      {%- if is_time -%}{{ s.reps or '—' }} s{%- else -%}{{ (s.weight_kg | replace('.', ',')) if s.weight_kg is not none else '—' }}×{{ s.reps or '—' }}{%- endif -%}
+      {{- ', ' if not loop.last }}
+    {%- endfor %}
   </p>
   {% endif %}
-  {% if c.suggestion %}<p class="suggestion">Sugestão de hoje: {{ c.suggestion | replace('.', ',') }} kg</p>{% endif %}
+  {% if c.suggestion %}<p class="suggestion">Sugestão de hoje: {{ c.suggestion | replace('.', ',') }}{{ ' s' if is_time else ' kg' }}</p>{% endif %}
 
   <div class="sets">
-    <div class="set-grid" style="margin-top:10px">
-      <span class="n"></span><span class="n">kg</span><span class="n">reps</span>
+    <div class="set-grid {{ 'time' if is_time }}" style="margin-top:10px">
+      {% if is_time %}<span class="n"></span><span class="n">segundos</span>
+      {% else %}<span class="n"></span><span class="n">kg</span><span class="n">reps</span>{% endif %}
     </div>
     {% set prefill = c.today if c.today else [] %}
     {% set n_rows = [prefill | length, c.row.target_sets] | max %}
     {% for i in range(n_rows) %}
-    <div class="set-grid set-row">
+    <div class="set-grid set-row {{ 'time' if is_time }}">
       <span class="n">{{ i + 1 }}</span>
+      {% if not is_time %}
       <input type="number" step="0.5" inputmode="decimal" class="in-kg"
              value="{{ prefill[i].weight_kg if i < prefill | length and prefill[i].weight_kg is not none else '' }}"
              placeholder="{{ c.suggestion | replace('.', ',') if c.suggestion else 'kg' }}">
+      {% endif %}
       <input type="number" step="1" inputmode="numeric" class="in-reps"
              value="{{ prefill[i].reps if i < prefill | length and prefill[i].reps is not none else '' }}"
-             placeholder="{{ c.row.target_reps }}">
+             placeholder="{{ (c.suggestion if is_time and c.suggestion else c.row.target_reps) }}">
     </div>
     {% endfor %}
   </div>
@@ -59,7 +66,14 @@
     </div>
     <div class="row">
       <div class="field"><label>Séries</label><input type="number" class="ed-sets" value="{{ c.row.target_sets }}"></div>
-      <div class="field"><label>Reps alvo</label><input type="number" class="ed-reps" value="{{ c.row.target_reps }}"></div>
+      <div class="field"><label>{{ 'Segundos' if is_time else 'Reps' }} alvo</label><input type="number" class="ed-reps" value="{{ c.row.target_reps }}"></div>
+    </div>
+    <div class="field">
+      <label>Tipo</label>
+      <select class="ed-kind">
+        <option value="weight" {{ 'selected' if not is_time }}>Carga (kg × reps)</option>
+        <option value="time" {{ 'selected' if is_time }}>Tempo (segundos)</option>
+      </select>
     </div>
     <div class="row">
       <button class="btn-ghost" onclick="updateExercise(this.closest('.card'), {{ c.row.id }})">Atualizar</button>
@@ -76,7 +90,14 @@
   <div class="field"><input type="text" id="new-name" placeholder="Nome do exercício"></div>
   <div class="row">
     <div class="field"><label>Séries</label><input type="number" id="new-sets" value="4"></div>
-    <div class="field"><label>Reps alvo</label><input type="number" id="new-reps" value="8"></div>
+    <div class="field"><label>Reps / seg alvo</label><input type="number" id="new-reps" value="8"></div>
+  </div>
+  <div class="field">
+    <label>Tipo</label>
+    <select id="new-kind">
+      <option value="weight">Carga (kg × reps)</option>
+      <option value="time">Tempo (segundos)</option>
+    </select>
   </div>
   <button class="btn" onclick="addExercise()">Adicionar</button>
 </div>
@@ -97,10 +118,13 @@ function addRow(card) {
 
 async function saveSets(btn, exId) {
   const card = btn.closest(".card");
-  const sets = [...card.querySelectorAll(".set-row")].map((r) => ({
-    weight_kg: r.querySelector(".in-kg").value.replace(",", "."),
-    reps: r.querySelector(".in-reps").value,
-  }));
+  const sets = [...card.querySelectorAll(".set-row")].map((r) => {
+    const kg = r.querySelector(".in-kg"); // ausente em exercícios por tempo
+    return {
+      weight_kg: kg ? kg.value.replace(",", ".") : "",
+      reps: r.querySelector(".in-reps").value,
+    };
+  });
   await App.post("/api/sets", { exercise_id: exId, date: DATE, sets });
   btn.textContent = "Salvo ✓";
   setTimeout(() => (btn.textContent = "Salvar"), 1500);
@@ -114,6 +138,7 @@ async function addExercise() {
     name,
     target_sets: document.getElementById("new-sets").value,
     target_reps: document.getElementById("new-reps").value,
+    kind: document.getElementById("new-kind").value,
   });
   location.reload();
 }
@@ -123,6 +148,7 @@ async function updateExercise(card, exId) {
     name: card.querySelector(".ed-name").value,
     target_sets: card.querySelector(".ed-sets").value,
     target_reps: card.querySelector(".ed-reps").value,
+    kind: card.querySelector(".ed-kind").value,
   });
   location.reload();
 }

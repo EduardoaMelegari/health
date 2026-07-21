@@ -34,19 +34,20 @@ TASKS = [
     ("Preparo de marmitas da semana", "preparo", "6", 3),
 ]
 
+# (treino, nome, séries, alvo, tipo) — tipo 'time' mede segundos (peso do corpo)
 EXERCISES = [
-    ("A", "Agachamento", 4, 8),
-    ("A", "Supino reto com halteres", 4, 8),
-    ("A", "Remada curvada", 4, 8),
-    ("A", "Prancha (segundos)", 3, 30),
-    ("B", "Levantamento terra romeno", 4, 8),
-    ("B", "Desenvolvimento de ombros", 4, 8),
-    ("B", "Puxada na frente", 4, 8),
-    ("B", "Rosca direta", 3, 10),
-    ("C", "Leg press", 4, 10),
-    ("C", "Supino inclinado", 4, 8),
-    ("C", "Remada baixa", 4, 10),
-    ("C", "Tríceps na polia", 3, 10),
+    ("A", "Agachamento", 4, 8, "weight"),
+    ("A", "Supino reto com halteres", 4, 8, "weight"),
+    ("A", "Remada curvada", 4, 8, "weight"),
+    ("A", "Prancha (segundos)", 3, 30, "time"),
+    ("B", "Levantamento terra romeno", 4, 8, "weight"),
+    ("B", "Desenvolvimento de ombros", 4, 8, "weight"),
+    ("B", "Puxada na frente", 4, 8, "weight"),
+    ("B", "Rosca direta", 3, 10, "weight"),
+    ("C", "Leg press", 4, 10, "weight"),
+    ("C", "Supino inclinado", 4, 8, "weight"),
+    ("C", "Remada baixa", 4, 10, "weight"),
+    ("C", "Tríceps na polia", 3, 10, "weight"),
 ]
 
 # Itens em peso PRONTO: (alimento, gramas, fator_cru, proteina, carbo, gordura, kcal)
@@ -155,10 +156,11 @@ def run():
                 (title, cat, days, sort))
 
     if cur.execute("SELECT COUNT(*) FROM exercise").fetchone()[0] == 0:
-        for i, (workout, name, sets, reps) in enumerate(EXERCISES):
+        for i, (workout, name, sets, reps, kind) in enumerate(EXERCISES):
             cur.execute(
-                "INSERT INTO exercise (workout, name, target_sets, target_reps, sort) VALUES (?, ?, ?, ?, ?)",
-                (workout, name, sets, reps, i))
+                "INSERT INTO exercise (workout, name, target_sets, target_reps, kind, sort)"
+                " VALUES (?, ?, ?, ?, ?, ?)",
+                (workout, name, sets, reps, kind, i))
 
     if cur.execute("SELECT COUNT(*) FROM meal").fetchone()[0] == 0:
         for m_sort, (meal_name, options) in enumerate(MEALS):

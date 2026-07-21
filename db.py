@@ -40,6 +40,7 @@ CREATE TABLE IF NOT EXISTS exercise (
     name        TEXT NOT NULL,
     target_sets INTEGER DEFAULT 4,
     target_reps INTEGER DEFAULT 8,
+    kind        TEXT NOT NULL DEFAULT 'weight',  -- 'weight' (kg × reps) ou 'time' (segundos, peso do corpo)
     sort        INTEGER DEFAULT 0,
     active      INTEGER DEFAULT 1
 );
@@ -121,8 +122,23 @@ def connect():
     return conn
 
 
+def _column_exists(conn, table, column):
+    return any(r["name"] == column for r in conn.execute(f"PRAGMA table_info({table})"))
+
+
+def migrate(conn):
+    """Ajustes de schema em bancos já existentes (CREATE TABLE IF NOT EXISTS não
+    adiciona colunas novas). Idempotente."""
+    if not _column_exists(conn, "exercise", "kind"):
+        conn.execute("ALTER TABLE exercise ADD COLUMN kind TEXT NOT NULL DEFAULT 'weight'")
+        # exercícios isométricos por tempo (ex.: prancha) medem segundos, não carga
+        conn.execute("UPDATE exercise SET kind = 'time' WHERE name LIKE '%segundo%'")
+    conn.commit()
+
+
 def init_db():
     conn = connect()
     conn.executescript(SCHEMA)
+    migrate(conn)
     conn.commit()
     conn.close()

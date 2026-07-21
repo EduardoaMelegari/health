@@ -141,15 +141,18 @@ def save_sets(conn, exercise_id, d, sets):
     conn.commit()
 
 
-def add_exercise(conn, workout, name, target_sets=4, target_reps=8):
+def add_exercise(conn, workout, name, target_sets=4, target_reps=8, kind=None):
     cur = conn.execute(
-        "INSERT INTO exercise (workout, name, target_sets, target_reps, sort) VALUES (?, ?, ?, ?, 99)",
-        (workout, name.strip(), int(target_sets or 4), int(target_reps or 8)))
+        "INSERT INTO exercise (workout, name, target_sets, target_reps, kind, sort)"
+        " VALUES (?, ?, ?, ?, ?, 99)",
+        (workout, name.strip(), int(target_sets or 4), int(target_reps or 8),
+         "time" if kind == "time" else "weight"))
     conn.commit()
     return cur.lastrowid
 
 
-def update_exercise(conn, ex_id, name=None, target_sets=None, target_reps=None, delete=False):
+def update_exercise(conn, ex_id, name=None, target_sets=None, target_reps=None,
+                    delete=False, kind=None):
     if delete:
         conn.execute("UPDATE exercise SET active = 0 WHERE id = ?", (ex_id,))
         conn.commit()
@@ -158,10 +161,11 @@ def update_exercise(conn, ex_id, name=None, target_sets=None, target_reps=None, 
     if cur is None:
         raise ValueError(f"exercício {ex_id} não existe")
     conn.execute(
-        "UPDATE exercise SET name = ?, target_sets = ?, target_reps = ? WHERE id = ?",
+        "UPDATE exercise SET name = ?, target_sets = ?, target_reps = ?, kind = ? WHERE id = ?",
         ((cur["name"] if name is None else name.strip()),
          int(cur["target_sets"] if target_sets is None else target_sets),
-         int(cur["target_reps"] if target_reps is None else target_reps), ex_id))
+         int(cur["target_reps"] if target_reps is None else target_reps),
+         (cur["kind"] if kind is None else ("time" if kind == "time" else "weight")), ex_id))
     conn.commit()
 
 
@@ -293,7 +297,7 @@ def plan_snapshot(conn):
     workouts = {}
     for ex in conn.execute("SELECT * FROM exercise WHERE active = 1 ORDER BY workout, sort, id"):
         workouts.setdefault(ex["workout"], []).append(
-            {"exercise_id": ex["id"], "name": ex["name"],
+            {"exercise_id": ex["id"], "name": ex["name"], "kind": ex["kind"],
              "target_sets": ex["target_sets"], "target_reps": ex["target_reps"]})
     return {
         "targets": {
@@ -339,7 +343,8 @@ def progress_snapshot(conn, days=10):
             "SELECT set_number, weight_kg, reps FROM set_log WHERE exercise_id = ? AND date = ?"
             " ORDER BY set_number", (ex["id"], last["date"])).fetchall()
         last_training.append({
-            "workout": ex["workout"], "exercise": ex["name"], "date": last["date"],
+            "workout": ex["workout"], "exercise": ex["name"], "kind": ex["kind"],
+            "date": last["date"],
             "sets": [{"weight_kg": s["weight_kg"], "reps": s["reps"]} for s in sets]})
     return {
         "today": today.isoformat(),

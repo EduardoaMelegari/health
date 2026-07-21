@@ -145,8 +145,11 @@ def treino():
             complete = (len(last_sets) >= ex["target_sets"]
                         and all((s["reps"] or 0) >= ex["target_reps"] for s in last_sets))
             if complete:
-                top = max((s["weight_kg"] or 0) for s in last_sets)
-                suggestion = top + 2.5
+                if ex["kind"] == "time":
+                    suggestion = ex["target_reps"] + 5  # bateu a meta: sugere +5 s
+                else:
+                    top = max((s["weight_kg"] or 0) for s in last_sets)
+                    suggestion = top + 2.5
         cards.append({"row": ex, "today": today_sets, "last_date": last["date"] if last else None,
                       "last_sets": last_sets, "suggestion": suggestion})
     return render_template("treino.html", page="treino", workout=w, date=d, cards=cards)
@@ -291,7 +294,7 @@ def save_sets():
 def add_exercise():
     p = request.get_json()
     actions.add_exercise(get_conn(), p["workout"], p["name"],
-                         p.get("target_sets"), p.get("target_reps"))
+                         p.get("target_sets"), p.get("target_reps"), p.get("kind"))
     return jsonify(ok=True)
 
 
@@ -299,7 +302,8 @@ def add_exercise():
 def update_exercise(ex_id):
     p = request.get_json()
     actions.update_exercise(get_conn(), ex_id, p.get("name"),
-                            p.get("target_sets"), p.get("target_reps"), p.get("delete", False))
+                            p.get("target_sets"), p.get("target_reps"),
+                            p.get("delete", False), p.get("kind"))
     return jsonify(ok=True)
 
 
