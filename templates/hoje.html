@@ -75,6 +75,7 @@
 
 <section>
   <h2>O que comer hoje <span class="sub" style="display:inline">· recomendações</span></h2>
+  <div class="meal-cards">
   {% for mc in meal_cards %}
   <div class="card meal">
     <h3>{{ mc.row.name }}</h3>
@@ -84,11 +85,14 @@
       <span class="opt-macros">{{ opt.macros.kcal | round | int }} kcal · P {{ opt.macros.protein_g | round | int }} g · C {{ opt.macros.carbs_g | round | int }} g · G {{ opt.macros.fat_g | round | int }} g</span>
       <span class="opt-items">{% for i in opt['items'] %}{{ i.food }} {{ i.grams | round | int }} g{{ ' · ' if not loop.last }}{% endfor %}</span>
       {% if opt.row.description %}<span class="opt-desc">{{ opt.row.description }}</span>{% endif %}
-      <button class="btn-ghost btn-sm ate-this" onclick="Food.logOption(this, {{ opt.row.id }})">comi isso</button>
+      <div class="ate-wrap">
+        <button class="btn-ghost btn-sm ate-this" onclick="Food.logOption(this, {{ opt.row.id }})">comi isso</button>
+      </div>
     </div>
     {% endfor %}
   </div>
   {% endfor %}
+  </div>
 </section>
 
 {% endblock %}

@@ -107,10 +107,9 @@ async function initChart() {
   const data = await (await fetch("/api/weight/data")).json();
   const css = getComputedStyle(document.documentElement);
   const tok = (n) => css.getPropertyValue(n).trim();
-  const forced = document.documentElement.dataset.theme;
-  const dark = forced ? forced === "dark" : matchMedia("(prefers-color-scheme: dark)").matches;
-  const seriesPeso = dark ? "#3987e5" : "#2a78d6";
-  const seriesMedia = "#008300";
+  // azul = peso, verde = média móvel — lidos dos tokens do tema atual
+  const seriesPeso = tok("--brand");
+  const seriesMedia = tok("--action");
 
   const labels = data.dates.map((d) => d.slice(8) + "/" + d.slice(5, 7));
   const all = data.weights.concat(data.moving);

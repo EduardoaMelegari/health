@@ -1,52 +1,75 @@
 :root {
   color-scheme: light;
-  --page: #f9f9f7;
-  --card: #fcfcfb;
-  --text: #0b0b0b;
-  --text-2: #52514e;
-  --muted: #898781;
-  --border: rgba(11, 11, 11, 0.1);
-  --hair: #e1e0d9;
-  --accent: #2a78d6;
-  --accent-soft: rgba(42, 120, 214, 0.12);
-  --good: #0ca30c;
-  --good-text: #006300;
-  --danger: #d03b3b;
-  --shadow: 0 1px 3px rgba(11, 11, 11, 0.06);
-  --radius: 16px;
+  /* Design system "Automação Solar" — canvas azul-acinzentado, cards brancos */
+  --page: #f0f3f7;
+  --card: #ffffff;
+  --text: #0f172a;
+  --text-2: #334155;
+  --muted: #64748b;
+  --border: #e2e8f0;
+  --hair: #eef2f6;
+  /* azul = identidade/dados/seleção · verde = ações de salvar/registrar */
+  --brand: #2563eb;
+  --brand-hover: #1d4ed8;
+  --accent: var(--brand);
+  --accent-soft: rgba(37, 99, 235, 0.1);
+  --action: #16a34a;
+  --action-hover: #15803d;
+  --good: #16a34a;
+  --good-text: #15803d;
+  --danger: #dc2626;
+  --shadow: 0 2px 10px rgba(15, 23, 42, 0.1);
+  --shadow-xs: 0 1px 2px rgba(15, 23, 42, 0.06);
+  --radius: 10px;
+  --radius-sm: 8px;
+  --radius-lg: 12px;
+  --font-sans: "Inter", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace;
 }
 /* escuro automático pelo tema do sistema — só quando não há escolha manual */
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme]) {
     color-scheme: dark;
-    --page: #0d0d0d;
-    --card: #1a1a19;
-    --text: #ffffff;
-    --text-2: #c3c2b7;
-    --muted: #898781;
-    --border: rgba(255, 255, 255, 0.1);
-    --hair: #2c2c2a;
-    --accent: #3987e5;
-    --accent-soft: rgba(57, 135, 229, 0.18);
-    --good-text: #0ca30c;
-    --shadow: none;
+    --page: #0b1120;
+    --card: #161d2e;
+    --text: #f1f5f9;
+    --text-2: #cbd5e1;
+    --muted: #8ea0b5;
+    --border: rgba(148, 163, 184, 0.16);
+    --hair: rgba(148, 163, 184, 0.12);
+    --brand: #3b82f6;
+    --brand-hover: #60a5fa;
+    --accent-soft: rgba(59, 130, 246, 0.2);
+    --action: #22c55e;
+    --action-hover: #16a34a;
+    --good: #22c55e;
+    --good-text: #4ade80;
+    --danger: #f87171;
+    --shadow: 0 2px 12px rgba(0, 0, 0, 0.35);
+    --shadow-xs: none;
   }
 }
 
 /* escuro forçado pelo botão de tema (vence o tema do sistema) */
 :root[data-theme="dark"] {
   color-scheme: dark;
-  --page: #0d0d0d;
-  --card: #1a1a19;
-  --text: #ffffff;
-  --text-2: #c3c2b7;
-  --muted: #898781;
-  --border: rgba(255, 255, 255, 0.1);
-  --hair: #2c2c2a;
-  --accent: #3987e5;
-  --accent-soft: rgba(57, 135, 229, 0.18);
-  --good-text: #0ca30c;
-  --shadow: none;
+  --page: #0b1120;
+  --card: #161d2e;
+  --text: #f1f5f9;
+  --text-2: #cbd5e1;
+  --muted: #8ea0b5;
+  --border: rgba(148, 163, 184, 0.16);
+  --hair: rgba(148, 163, 184, 0.12);
+  --brand: #3b82f6;
+  --brand-hover: #60a5fa;
+  --accent-soft: rgba(59, 130, 246, 0.2);
+  --action: #22c55e;
+  --action-hover: #16a34a;
+  --good: #22c55e;
+  --good-text: #4ade80;
+  --danger: #f87171;
+  --shadow: 0 2px 12px rgba(0, 0, 0, 0.35);
+  --shadow-xs: none;
 }
 /* claro forçado: o :root base já traz as cores claras; o guard :not([data-theme])
    acima impede o dark automático quando data-theme="light" está setado. */
@@ -54,12 +77,18 @@
 * { box-sizing: border-box; margin: 0; }
 
 body {
-  font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+  font-family: var(--font-sans);
   background: var(--page);
   color: var(--text);
   font-size: 16px;
   line-height: 1.45;
   -webkit-font-smoothing: antialiased;
+}
+
+/* dados técnicos (números, macros, tabelas) em fonte mono */
+.macro-row .val, .li-macros, .opt-macros, .tile .v,
+.suggestion, .last-info, .set-grid .n, td, code {
+  font-family: var(--font-mono);
 }
 
 main {
@@ -93,6 +122,8 @@ h2 { font-size: 1rem; font-weight: 600; margin-bottom: 10px; }
 }
 
 section { margin-bottom: 22px; }
+/* respiro extra acima de Checklist / Registrado hoje / O que comer (handoff) */
+section + section { margin-top: 26px; }
 
 /* ---------- macros ---------- */
 .macro-row { display: grid; grid-template-columns: 74px 1fr auto; gap: 10px; align-items: center; padding: 6px 0; }
@@ -106,7 +137,7 @@ section { margin-bottom: 22px; }
 .macro-note.done strong { color: var(--good-text); }
 
 /* ---------- registro alimentar (Hoje) ---------- */
-.quick-log { display: flex; gap: 8px; margin-bottom: 10px; align-items: flex-end; }
+.quick-log { display: flex; gap: 8px; margin-bottom: 12px; align-items: center; }
 .quick-log textarea {
   flex: 1; resize: none; max-height: 120px; overflow-y: auto; line-height: 1.35;
 }
@@ -130,7 +161,7 @@ section { margin-bottom: 22px; }
   display: flex; align-items: center; gap: 12px;
   width: 100%; text-align: left;
   background: var(--card); border: 1px solid var(--border);
-  border-radius: var(--radius); box-shadow: var(--shadow);
+  border-radius: var(--radius-lg); box-shadow: var(--shadow-xs);
   padding: 13px 16px; margin-bottom: 8px;
   font: inherit; color: var(--text); cursor: pointer;
 }
@@ -145,6 +176,9 @@ section { margin-bottom: 22px; }
 .task .cat { margin-left: auto; font-size: 0.7rem; color: var(--muted); text-transform: uppercase; letter-spacing: 0.05em; }
 
 /* ---------- refeições ---------- */
+/* cards de recomendação com respiro maior entre si (handoff) */
+.meal-cards { display: flex; flex-direction: column; gap: 20px; }
+.meal-cards .meal { margin-bottom: 0; }
 .meal { padding: 14px 16px; }
 .meal h3 { font-size: 0.95rem; font-weight: 600; margin-bottom: 2px; }
 .meal .picked { font-size: 0.8rem; color: var(--good-text); }
@@ -158,7 +192,9 @@ section { margin-bottom: 22px; }
 .option.selected { border-color: var(--accent); background: var(--accent-soft); }
 .option.static { cursor: default; }
 .option.static:hover { border-color: var(--border); }
-.ate-this { margin-top: 8px; }
+/* "comi isso" no canto direito, com respiro acima dos ingredientes (handoff) */
+.ate-wrap { display: flex; justify-content: flex-end; margin-top: 16px; }
+.ate-this { margin-top: 0; }
 .option .opt-name { font-size: 0.9rem; font-weight: 600; display: flex; align-items: center; gap: 8px; }
 .option .opt-name .dot {
   flex: 0 0 16px; height: 16px; border-radius: 50%;
@@ -173,7 +209,7 @@ section { margin-bottom: 22px; }
 input, select, textarea {
   font: inherit; color: var(--text);
   background: var(--page); border: 1px solid var(--border);
-  border-radius: 10px; padding: 10px 12px; width: 100%;
+  border-radius: var(--radius-sm); padding: 10px 12px; width: 100%;
 }
 input:focus, select:focus { outline: 2px solid var(--accent); outline-offset: -1px; border-color: transparent; }
 label { font-size: 0.8rem; color: var(--text-2); display: block; margin-bottom: 4px; }
@@ -183,18 +219,21 @@ label { font-size: 0.8rem; color: var(--text-2); display: block; margin-bottom: 
 
 .btn {
   font: inherit; font-weight: 600; font-size: 0.9rem;
-  background: var(--accent); color: #fff;
-  border: 0; border-radius: 12px; padding: 12px 18px;
+  background: var(--action); color: #fff;
+  border: 0; border-radius: var(--radius); padding: 12px 18px;
   cursor: pointer; width: 100%;
+  transition: background 0.15s ease;
 }
+.btn:hover { background: var(--action-hover); }
 .btn:active { opacity: 0.85; }
 .btn-ghost {
   font: inherit; font-size: 0.85rem; font-weight: 600;
-  background: transparent; color: var(--accent);
-  border: 1.5px solid var(--border); border-radius: 10px;
+  background: transparent; color: var(--brand);
+  border: 1.5px solid var(--border); border-radius: var(--radius-sm);
   padding: 8px 14px; cursor: pointer;
 }
-.btn-sm { width: auto; padding: 8px 14px; font-size: 0.85rem; border-radius: 10px; }
+.btn-ghost:hover { border-color: var(--brand); }
+.btn-sm { width: auto; padding: 8px 14px; font-size: 0.85rem; border-radius: var(--radius-sm); }
 .btn-danger { background: transparent; color: var(--danger); border: 0; font-size: 0.8rem; cursor: pointer; padding: 6px; }
 
 /* ---------- stats / tiles ---------- */
@@ -238,8 +277,9 @@ nav a {
   flex: 1 1 0; min-width: 0; display: flex; flex-direction: column; align-items: center; gap: 3px;
   padding: 10px 0 8px; text-decoration: none; white-space: nowrap;
   color: var(--muted); font-size: 0.62rem; font-weight: 500;
+  border-top: 2px solid transparent;
 }
-nav a.active { color: var(--accent); }
+nav a.active { color: var(--brand); border-top-color: var(--brand); font-weight: 600; }
 nav svg { width: 22px; height: 22px; }
 
 /* ---------- coach / chat ---------- */
@@ -290,6 +330,17 @@ nav svg { width: 22px; height: 22px; }
 .bubble.typing { color: var(--muted); font-style: italic; }
 .bubble.error { border-color: var(--danger); color: var(--danger); }
 
+/* histórico de dias anteriores, colapsado */
+.past-days { display: flex; flex-direction: column; gap: 10px; }
+.past-days > summary {
+  cursor: pointer; list-style: none; text-align: center;
+  color: var(--muted); font-size: 0.78rem; padding: 2px 0;
+}
+.past-days > summary::-webkit-details-marker { display: none; }
+.past-days > summary::before { content: "▸ "; }
+.past-days[open] > summary::before { content: "▾ "; }
+.past-days[open] > summary { margin-bottom: 2px; }
+
 .suggestions { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 12px; }
 
 .composer {
@@ -308,7 +359,7 @@ nav svg { width: 22px; height: 22px; }
 .btn.send:disabled { opacity: 0.5; }
 
 code {
-  font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: 0.85em;
+  font-family: var(--font-mono); font-size: 0.85em;
   background: var(--page); border: 1px solid var(--border);
   border-radius: 6px; padding: 1px 5px;
 }
