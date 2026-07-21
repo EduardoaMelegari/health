@@ -21,9 +21,11 @@ def day_label(iso):
     return f"{_WD[d.weekday()].capitalize()}, {d.day} de {_MO[d.month - 1]}"
 
 MODEL = os.environ.get("ANTHROPIC_MODEL", "claude-sonnet-5")
+# resumo de continuidade é tarefa simples; pode apontar p/ um modelo mais barato via env
+SUMMARY_MODEL = os.environ.get("COACH_SUMMARY_MODEL", MODEL)
 MAX_TOKENS = 2000
 MAX_TOOL_ITERATIONS = 8
-HISTORY_LIMIT = 20  # mensagens recarregadas por turno (controla custo/contexto)
+HISTORY_LIMIT = 20  # teto de segurança de mensagens por dia (o contexto é escopado ao dia de hoje)
 
 try:
     import anthropic
@@ -270,10 +272,12 @@ def load_history_grouped(conn):
     return groups
 
 
-def _api_history(conn):
+def _api_history(conn, day):
+    """Janela de contexto = só as mensagens do dia informado (thread diária)."""
     rows = conn.execute(
-        "SELECT role, content_json FROM chat_message WHERE active = 1 ORDER BY id DESC LIMIT ?",
-        (HISTORY_LIMIT,)).fetchall()
+        "SELECT role, content_json FROM chat_message"
+        " WHERE active = 1 AND substr(created_at, 1, 10) = ? ORDER BY id DESC LIMIT ?",
+        (day, HISTORY_LIMIT)).fetchall()
     msgs = [{"role": r["role"], "content": json.loads(r["content_json"])} for r in reversed(rows)]
     # a janela não pode começar com tool_result órfão; corta até a 1ª mensagem 'limpa'
     while msgs and _starts_with_tool_result(msgs[0]):
@@ -286,8 +290,71 @@ def _starts_with_tool_result(msg):
     return isinstance(c, list) and c and isinstance(c[0], dict) and c[0].get("type") == "tool_result"
 
 
+def _get_cfg(conn, key, default=""):
+    row = conn.execute("SELECT value FROM config WHERE key = ?", (key,)).fetchone()
+    return row["value"] if row else default
+
+
+def _set_cfg(conn, key, value):
+    conn.execute(
+        "INSERT INTO config (key, value) VALUES (?, ?)"
+        " ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+        (key, value))
+    conn.commit()
+
+
+SUMMARY_SYSTEM = (
+    "Você mantém um resumo de continuidade das conversas do Eduardo com o coach de saúde, "
+    "em português do Brasil. Funda o resumo anterior com a nova transcrição num texto "
+    "compacto (no máximo ~10 tópicos). Guarde só o que é útil pro coach nos próximos dias: "
+    "decisões e ajustes de plano (metas, cardápio, treino), preferências, queixas "
+    "recorrentes e pendências em aberto. Descarte conversa fiada e dados que o coach já "
+    "obtém sozinho (peso, macros, aderência). Responda só com o resumo, em tópicos curtos."
+)
+
+
+def _summarize(prev_summary, transcript):
+    """Gera/atualiza o resumo de continuidade. Nunca levanta — em erro, devolve o anterior."""
+    try:
+        parts = []
+        if prev_summary:
+            parts.append("Resumo anterior:\n" + prev_summary)
+        parts.append("Nova transcrição a incorporar:\n" + transcript)
+        resp = _client.messages.create(
+            model=SUMMARY_MODEL, max_tokens=600,
+            thinking={"type": "disabled"},
+            system=SUMMARY_SYSTEM,
+            messages=[{"role": "user", "content": "\n\n".join(parts)}])
+        out = "".join(b.text for b in resp.content if b.type == "text").strip()
+        return out or prev_summary
+    except Exception:
+        return prev_summary
+
+
+def _rollup_previous_days(conn, today):
+    """Na 1ª mensagem de um dia novo, resume tudo que é anterior a hoje e ainda não
+    foi resumido, e persiste o resumo de continuidade em config."""
+    through = _get_cfg(conn, "coach_summary_through", "")
+    rows = conn.execute(
+        "SELECT role, text, created_at FROM chat_message"
+        " WHERE active = 1 AND text IS NOT NULL"
+        " AND substr(created_at, 1, 10) < ? AND substr(created_at, 1, 10) > ?"
+        " ORDER BY id",
+        (today, through)).fetchall()
+    if not rows:
+        return
+    autor = {"user": "Eduardo", "assistant": "Coach"}
+    transcript = "\n".join(
+        f"[{r['created_at'][:10]}] {autor.get(r['role'], r['role'])}: {r['text']}"
+        for r in rows)
+    new_summary = _summarize(_get_cfg(conn, "coach_summary", ""), transcript)
+    _set_cfg(conn, "coach_summary", new_summary)
+    _set_cfg(conn, "coach_summary_through", rows[-1]["created_at"][:10])
+
+
 def reset(conn):
     conn.execute("UPDATE chat_message SET active = 0")
+    conn.execute("DELETE FROM config WHERE key IN ('coach_summary', 'coach_summary_through')")
     conn.commit()
 
 
@@ -352,6 +419,13 @@ def chat(conn, user_text):
     if not is_configured():
         raise RuntimeError("Coach não configurado (defina ANTHROPIC_API_KEY).")
 
+    today = date.today().isoformat()
+    # ao virar o dia, condensa os dias anteriores num resumo de continuidade (não bloqueia o chat)
+    try:
+        _rollup_previous_days(conn, today)
+    except Exception:
+        pass
+
     _save(conn, "user", user_text, user_text)
 
     # snapshot compacto no system para dar contexto imediato de progresso
@@ -361,8 +435,13 @@ def chat(conn, user_text):
         {"type": "text", "text": "Situação atual (resumo — use get_progress p/ detalhe):\n"
                                  + json.dumps(snap, ensure_ascii=False)},
     ]
+    summary = _get_cfg(conn, "coach_summary", "")
+    if summary:
+        system.append({"type": "text",
+                       "text": "Resumo das conversas anteriores (contexto — não repita "
+                               "literalmente):\n" + summary})
 
-    messages = _api_history(conn)
+    messages = _api_history(conn, today)
     final_text = ""
 
     for _ in range(MAX_TOOL_ITERATIONS):

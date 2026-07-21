@@ -178,6 +178,7 @@ def coach_page():
     groups = coach.load_history_grouped(get_conn())
     return render_template("coach.html", page="coach", groups=groups,
                            last_date=groups[-1]["date"] if groups else "",
+                           today=date.today().isoformat(),
                            configured=coach.is_configured())
 
 

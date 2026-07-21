@@ -14,7 +14,20 @@
 {% else %}
 
 <div id="chat" data-last-date="{{ last_date }}">
-  {% for g in groups %}
+  {% set past = groups | selectattr("date", "lt", today) | list %}
+  {% set current = groups | rejectattr("date", "lt", today) | list %}
+  {% if past %}
+  <details class="past-days">
+    <summary>Conversas anteriores</summary>
+    {% for g in past %}
+    <div class="day-divider"><span>{{ g.label }}</span></div>
+    {% for m in g.messages %}
+    <div class="bubble {{ m.role }}">{{ m.text }}</div>
+    {% endfor %}
+    {% endfor %}
+  </details>
+  {% endif %}
+  {% for g in current %}
   <div class="day-divider"><span>{{ g.label }}</span></div>
   {% for m in g.messages %}
   <div class="bubble {{ m.role }}">{{ m.text }}</div>
@@ -22,7 +35,7 @@
   {% endfor %}
 </div>
 
-{% if not groups %}
+{% if not current %}
 <div class="suggestions" id="suggestions">
   <button class="btn-ghost btn-sm" onclick="Coach.suggest(this)">Como está meu progresso?</button>
   <button class="btn-ghost btn-sm" onclick="Coach.suggest(this)">Estou no ritmo pra bater o próximo marco?</button>
