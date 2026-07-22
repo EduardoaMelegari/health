@@ -23,7 +23,12 @@ def day_label(iso):
 MODEL = os.environ.get("ANTHROPIC_MODEL", "claude-sonnet-5")
 # resumo de continuidade é tarefa simples; pode apontar p/ um modelo mais barato via env
 SUMMARY_MODEL = os.environ.get("COACH_SUMMARY_MODEL", MODEL)
-MAX_TOKENS = 2000
+# No Sonnet 5 o thinking adaptativo consome o MESMO orçamento de max_tokens. Com um teto
+# baixo o modelo gastava tudo pensando/chamando ferramentas e era truncado ANTES de
+# escrever a resposta (stop_reason=max_tokens) — daí o "(sem resposta)". Teto folgado +
+# esforço moderado deixam sempre espaço para o texto final.
+MAX_TOKENS = 8000
+COACH_EFFORT = os.environ.get("COACH_EFFORT", "medium")  # low | medium | high | xhigh | max
 MAX_TOOL_ITERATIONS = 8
 HISTORY_LIMIT = 20  # teto de segurança de mensagens por dia (o contexto é escopado ao dia de hoje)
 
@@ -448,6 +453,7 @@ def chat(conn, user_text):
         resp = _client.messages.create(
             model=MODEL, max_tokens=MAX_TOKENS,
             thinking={"type": "adaptive"},
+            output_config={"effort": COACH_EFFORT},
             system=system, tools=TOOLS, messages=messages)
 
         messages.append({"role": "assistant", "content": resp.content})
