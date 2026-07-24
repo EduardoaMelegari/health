@@ -22,8 +22,9 @@ Abra http://localhost:8080. O banco é criado e populado automaticamente em
 docker compose up -d --build
 ```
 
-O SQLite fica no volume `./data` — faça backup desse diretório. Acesse pelo
-celular via `http://IP-DO-SERVIDOR:8080`.
+O SQLite fica no volume `./data` — faça backup desse diretório. O app também
+gera sozinho uma cópia diária em `data/backups/` (mantém as últimas 14). Acesse
+pelo celular via `http://IP-DO-SERVIDOR:8080`.
 
 > Sem autenticação: pensado para rede local. Se for expor para fora, coloque
 > atrás de um reverse proxy com autenticação (ex.: Authelia, basic auth no
@@ -65,7 +66,9 @@ Sem a chave, o resto do app funciona normalmente e a aba Coach mostra um aviso d
 configuração. O coach aplica edições direto no plano (tudo reversível nas páginas
 Dieta/Treino) e a conversa fica salva no SQLite (exportável). O padrão é o
 `claude-sonnet-5` (bom custo-benefício, ~metade do preço do Opus); troque para
-`claude-opus-4-8` se quiser o feedback mais aprofundado.
+`claude-opus-4-8` se quiser o feedback mais aprofundado. O resumo de continuidade
+entre dias usa o `claude-haiku-4-5` (tarefa simples, fração do custo) — mude com
+`COACH_SUMMARY_MODEL` se quiser.
 
 ## Ajustes
 

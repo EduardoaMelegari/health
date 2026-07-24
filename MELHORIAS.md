@@ -1,0 +1,53 @@
+# Melhorias — 24/07/2026
+
+Registro da revisão de código do app e das correções aplicadas. Tudo abaixo já
+está implementado; a coluna "onde" aponta o arquivo principal de cada mudança.
+
+## Riscos reais corrigidos
+
+| # | Problema | Correção | Onde |
+|---|----------|----------|------|
+| 1 | O timeout padrão do gunicorn (30 s) matava o worker no meio do loop do coach (até 8 chamadas à API por mensagem) | `--timeout 300` + workers `gthread` (2×4 threads) | `Dockerfile` |
+| 2 | Worker morto no meio do loop deixava um `tool_use` sem `tool_result` no histórico → a API rejeitava (400) todas as mensagens seguintes do dia | `_api_history()` agora neutraliza `tool_use` pendente no fim da janela (troca por texto `(resposta interrompida)`) | `coach.py` |
+| 3 | O Dockerfile copiava o `requirements.txt` mas instalava pacotes na mão, sem versão | `pip install -r requirements.txt` | `Dockerfile` |
+| 4 | `COPY . .` embutia o banco de saúde (dados pessoais), `.git` e caches nas layers da imagem | `.dockerignore` novo excluindo `data/`, `.git/`, `__pycache__/`, `.env` etc. | `.dockerignore` |
+| 5 | SQLite sem WAL com 2 workers → risco de "database is locked" | `PRAGMA journal_mode=WAL` + `busy_timeout=15s` no `connect()` | `db.py` |
+| 6 | `app.run(host="0.0.0.0", debug=True)` expunha o debugger do Werkzeug (executa código) para a rede local | Dev local agora escuta só em `127.0.0.1` (produção continua via gunicorn/Docker) | `app.py` |
+
+## Dívidas removidas (regra "lógica de dados no actions.py")
+
+| # | Duplicação | Correção |
+|---|-----------|----------|
+| 7 | Aderência de 7 dias reimplementada linha a linha em `hoje()` | Rota usa `actions.adherence(conn, 7)` |
+| 8 | Média móvel recalculada em `/api/weight/data` | Rota reusa `actions.weight_stats()` |
+| 9 | Montagem refeição→opções→itens duplicada em `hoje()` e `dieta()` | Helper único `actions.meal_library()` |
+| 10 | `toggle_task` era a única mutação fora do actions.py | Movida para `actions.toggle_task()` / `set_task_done()` |
+| 11 | `WORKOUT_BY_WEEKDAY`/`RUN_DAYS` duplicadas (e mortas) no actions.py | Removidas — ficam só no `app.py` |
+| 12 | Tabela `meal_choice` no schema sem nenhum uso no código (design anterior ao `food_log`) | Removida do schema; `migrate()` dropa em bancos existentes |
+
+## Produto e robustez
+
+| # | Melhoria | Detalhe |
+|---|----------|---------|
+| 13 | **Coach enxerga o checklist** | Novas ferramentas `list_tasks` e `set_task_done` — "fiz a corrida" agora marca a tarefa do dia |
+| 14 | **Coach edita `review_days` e `height_m`** | `update_targets` aceita os dois campos (antes exigia editar o SQLite na mão) |
+| 15 | **Backup diário automático** | `VACUUM INTO data/backups/health-AAAA-MM-DD.db` no primeiro request do dia; mantém as últimas 14 cópias |
+| 16 | **Rollup do resumo em background** | O resumo de continuidade (virada de dia) roda numa thread com conexão própria — a 1ª mensagem do dia não paga mais essa latência. Trade-off: essa 1ª mensagem usa o resumo já persistido (sem o dia anterior); da 2ª em diante o resumo novo entra |
+| 17 | **Resumo com Haiku** | `COACH_SUMMARY_MODEL` agora tem padrão `claude-haiku-4-5` — tarefa trivial a ~1/3 do preço do Sonnet (continua configurável por env) |
+| 18 | **Lista de compras robusta** | Coluna `meal.shopping` (0/1) substitui o `idx >= 4` que dependia da ordem das refeições — se o coach criar uma refeição nova, nada quebra silenciosamente |
+| 19 | **BOM explícito no CSV** | `"﻿"` no lugar do caractere invisível no fonte (evita "limpeza" acidental por editor) |
+
+## Como validar
+
+```bash
+python app.py           # migra o banco (WAL, meal.shopping, drop meal_choice) e sobe em 127.0.0.1:8080
+```
+
+No servidor: `docker compose up -d --build` (a imagem nova instala do
+requirements.txt e sobe o gunicorn com gthread/timeout).
+
+## Não feito (consciente)
+
+- **Testes automatizados** — o projeto decide não ter suíte (ver CLAUDE.md);
+  a validação continua sendo rodar o app e exercitar as páginas.
+- **Autenticação** — segue fora do escopo (rede local / reverse proxy).

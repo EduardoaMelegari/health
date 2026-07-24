@@ -1,6 +1,6 @@
 import csv
 import io
-from datetime import date, datetime, timedelta
+from datetime import date
 
 from flask import Flask, g, jsonify, render_template, request, Response
 
@@ -29,6 +29,24 @@ def close_conn(_exc):
     conn = g.pop("conn", None)
     if conn is not None:
         conn.close()
+
+
+_backup_day = None
+
+
+@app.before_request
+def daily_backup():
+    """Uma cópia de segurança por dia (VACUUM INTO data/backups/), disparada no
+    primeiro request do dia. Barato: nos demais requests é só uma comparação."""
+    global _backup_day
+    today = today_str()
+    if _backup_day == today:
+        return
+    _backup_day = today
+    try:
+        db.backup(get_conn())
+    except Exception:
+        app.logger.exception("falha no backup diário")
 
 
 # helpers de dados vivem em actions.py (reutilizados pelas rotas e pelo coach)
@@ -60,43 +78,12 @@ def hoje():
     d = date.today()
     wd = d.weekday()
 
-    tasks = conn.execute(
-        "SELECT t.*, (SELECT 1 FROM task_done dn WHERE dn.template_id = t.id AND dn.date = ?) done"
-        " FROM task_template t WHERE t.active = 1 ORDER BY t.sort, t.id", (d.isoformat(),)).fetchall()
-    tasks = [t for t in tasks if str(wd) in t["weekdays"].split(",")]
-
-    meals = conn.execute("SELECT * FROM meal ORDER BY sort").fetchall()
-    meal_cards = []
-    for m in meals:
-        options = conn.execute(
-            "SELECT * FROM meal_option WHERE meal_id = ? AND active = 1 ORDER BY sort, id",
-            (m["id"],)).fetchall()
-        opts = []
-        for o in options:
-            items = conn.execute(
-                "SELECT * FROM meal_item WHERE option_id = ? ORDER BY id", (o["id"],)).fetchall()
-            opts.append({"row": o, "items": items, "macros": option_macros(conn, o["id"])})
-        meal_cards.append({"row": m, "options": opts})
-
+    tasks = actions.tasks_for_date(conn, d)
+    meal_cards = actions.meal_library(conn)
     logged = actions.food_log_for_date(conn, d.isoformat())
     tg = targets_for(d, cfg)
     consumed = macros_for_date(conn, d)
-
-    # aderência dos últimos 7 dias (tarefas agendadas x concluídas)
-    total = done = 0
-    for i in range(7):
-        di = d - timedelta(days=i)
-        wdi = str(di.weekday())
-        ids = [t["id"] for t in conn.execute(
-            "SELECT id, weekdays FROM task_template WHERE active = 1")
-            if wdi in t["weekdays"].split(",")]
-        total += len(ids)
-        if ids:
-            marks = ",".join("?" * len(ids))
-            done += conn.execute(
-                f"SELECT COUNT(*) FROM task_done WHERE date = ? AND template_id IN ({marks})",
-                [di.isoformat()] + ids).fetchone()[0]
-    adherence = round(100 * done / total) if total else None
+    adherence = actions.adherence(conn, 7)
 
     start = parse_date(cfg.get("start_date", d.isoformat()))
     review_days = int(cfg.get("review_days", 28))
@@ -157,20 +144,8 @@ def treino():
 
 @app.route("/dieta")
 def dieta():
-    conn = get_conn()
-    meals = conn.execute("SELECT * FROM meal ORDER BY sort").fetchall()
-    data = []
-    for m in meals:
-        options = conn.execute(
-            "SELECT * FROM meal_option WHERE meal_id = ? AND active = 1 ORDER BY sort, id",
-            (m["id"],)).fetchall()
-        opts = []
-        for o in options:
-            items = conn.execute(
-                "SELECT * FROM meal_item WHERE option_id = ? ORDER BY id", (o["id"],)).fetchall()
-            opts.append({"row": o, "items": items, "macros": option_macros(conn, o["id"])})
-        data.append({"row": m, "options": opts})
-    return render_template("dieta.html", page="dieta", meals=data)
+    return render_template("dieta.html", page="dieta",
+                           meals=actions.meal_library(get_conn()))
 
 
 @app.route("/coach")
@@ -199,19 +174,7 @@ def export_page():
 @app.post("/api/task/toggle")
 def toggle_task():
     p = request.get_json()
-    conn = get_conn()
-    existing = conn.execute(
-        "SELECT id FROM task_done WHERE template_id = ? AND date = ?",
-        (p["template_id"], p["date"])).fetchone()
-    if existing:
-        conn.execute("DELETE FROM task_done WHERE id = ?", (existing["id"],))
-        done = False
-    else:
-        conn.execute(
-            "INSERT INTO task_done (template_id, date, done_at) VALUES (?, ?, ?)",
-            (p["template_id"], p["date"], datetime.now().isoformat(timespec="seconds")))
-        done = True
-    conn.commit()
+    done = actions.toggle_task(get_conn(), p["template_id"], p["date"])
     return jsonify(done=done)
 
 
@@ -270,16 +233,11 @@ def delete_weight():
 
 @app.get("/api/weight/data")
 def weight_data():
-    conn = get_conn()
     cfg = get_config()
-    rows = conn.execute("SELECT date, weight_kg FROM weight_log ORDER BY date").fetchall()
-    dates = [r["date"] for r in rows]
-    weights = [r["weight_kg"] for r in rows]
-    moving = []
-    for i in range(len(weights)):
-        window = weights[max(0, i - 3):i + 1]
-        moving.append(round(sum(window) / len(window), 2))
-    return jsonify(dates=dates, weights=weights, moving=moving,
+    stats = actions.weight_stats(get_conn(), cfg)
+    return jsonify(dates=[h["date"] for h in stats["history"]],
+                   weights=[h["weight_kg"] for h in stats["history"]],
+                   moving=stats["moving_avg"],
                    milestones=[float(x) for x in cfg.get("milestones", "").split(",") if x])
 
 
@@ -345,9 +303,8 @@ def update_item(item_id):
 @app.get("/api/shopping-list")
 def shopping_list():
     """Lista da semana a partir da BIBLIOTECA: opção padrão (1ª) de cada refeição
-    principal × 7 dias, convertida para peso CRU pelo raw_factor."""
+    com shopping=1 × 7 dias, convertida para peso CRU pelo raw_factor."""
     conn = get_conn()
-    meals = conn.execute("SELECT * FROM meal ORDER BY sort").fetchall()
     totals = {}
 
     def add_items(option_id, mult=1):
@@ -355,9 +312,7 @@ def shopping_list():
             raw = it["grams"] / (it["raw_factor"] or 1)
             totals[it["food"]] = totals.get(it["food"], 0) + raw * mult
 
-    for idx, m in enumerate(meals):
-        if idx >= 4:  # só as 4 refeições principais (ignora "Extra")
-            continue
+    for m in conn.execute("SELECT * FROM meal WHERE shopping = 1 ORDER BY sort"):
         default = conn.execute(
             "SELECT id FROM meal_option WHERE meal_id = ? AND active = 1 ORDER BY sort, id LIMIT 1",
             (m["id"],)).fetchone()
@@ -397,7 +352,7 @@ def csv_response(name, header, rows):
     writer.writerow(header)
     for row in rows:
         writer.writerow([str(c).replace(".", ",") if isinstance(c, float) else c for c in row])
-    data = "﻿" + buf.getvalue()  # BOM para o Excel abrir acentos direito
+    data = "﻿" + buf.getvalue()  # BOM (escape explícito) para o Excel abrir acentos direito
     return Response(data, mimetype="text/csv; charset=utf-8",
                     headers={"Content-Disposition": f"attachment; filename={name}"})
 
@@ -466,4 +421,6 @@ def export_coach():
 seed.run()
 
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=8080, debug=True)
+    # dev local: 127.0.0.1 — o debugger do Werkzeug permite executar código, não
+    # exponha na rede. Em produção quem serve é o gunicorn (Docker).
+    app.run(host="127.0.0.1", port=8080, debug=True)

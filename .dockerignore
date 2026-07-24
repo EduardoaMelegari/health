@@ -1,0 +1,17 @@
+# dados pessoais e artefatos locais — nunca devem entrar na imagem
+data/
+*.db
+*.db-wal
+*.db-shm
+.env
+
+.git/
+.gitignore
+__pycache__/
+*.pyc
+.venv/
+venv/
+Dockerfile
+docker-compose.yml
+.dockerignore
+MELHORIAS.md

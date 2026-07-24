@@ -1,8 +1,11 @@
 import os
 import sqlite3
+from datetime import date
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DB_PATH = os.environ.get("DB_PATH", os.path.join(BASE_DIR, "data", "health.db"))
+BACKUP_DIR = os.path.join(os.path.dirname(DB_PATH), "backups")
+BACKUP_KEEP = 14  # mantém as últimas N cópias diárias
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS config (
@@ -55,9 +58,10 @@ CREATE TABLE IF NOT EXISTS set_log (
 );
 
 CREATE TABLE IF NOT EXISTS meal (
-    id   INTEGER PRIMARY KEY,
-    name TEXT NOT NULL,
-    sort INTEGER DEFAULT 0
+    id       INTEGER PRIMARY KEY,
+    name     TEXT NOT NULL,
+    sort     INTEGER DEFAULT 0,
+    shopping INTEGER NOT NULL DEFAULT 1  -- entra na lista de compras semanal (0 p/ "Extra")
 );
 
 CREATE TABLE IF NOT EXISTS meal_option (
@@ -79,14 +83,6 @@ CREATE TABLE IF NOT EXISTS meal_item (
     carbs_g    REAL DEFAULT 0,
     fat_g      REAL DEFAULT 0,
     kcal       REAL DEFAULT 0
-);
-
-CREATE TABLE IF NOT EXISTS meal_choice (
-    id        INTEGER PRIMARY KEY,
-    date      TEXT NOT NULL,
-    meal_id   INTEGER NOT NULL REFERENCES meal(id),
-    option_id INTEGER NOT NULL REFERENCES meal_option(id),
-    UNIQUE(date, meal_id)
 );
 
 CREATE TABLE IF NOT EXISTS chat_message (
@@ -116,9 +112,12 @@ CREATE TABLE IF NOT EXISTS food_log (
 
 def connect():
     os.makedirs(os.path.dirname(DB_PATH), exist_ok=True)
-    conn = sqlite3.connect(DB_PATH)
+    conn = sqlite3.connect(DB_PATH, timeout=15)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA foreign_keys = ON")
+    # WAL: leituras não bloqueiam escritas — necessário com 2 workers do gunicorn
+    conn.execute("PRAGMA journal_mode = WAL")
+    conn.execute("PRAGMA busy_timeout = 15000")
     return conn
 
 
@@ -133,7 +132,26 @@ def migrate(conn):
         conn.execute("ALTER TABLE exercise ADD COLUMN kind TEXT NOT NULL DEFAULT 'weight'")
         # exercícios isométricos por tempo (ex.: prancha) medem segundos, não carga
         conn.execute("UPDATE exercise SET kind = 'time' WHERE name LIKE '%segundo%'")
+    if not _column_exists(conn, "meal", "shopping"):
+        conn.execute("ALTER TABLE meal ADD COLUMN shopping INTEGER NOT NULL DEFAULT 1")
+        conn.execute("UPDATE meal SET shopping = 0 WHERE name LIKE 'Extra%'")
+    # tabela de um design anterior ao food_log; nunca foi usada pelo código
+    conn.execute("DROP TABLE IF EXISTS meal_choice")
     conn.commit()
+
+
+def backup(conn):
+    """Cópia diária consistente do banco (VACUUM INTO data/backups/). Mantém as
+    últimas BACKUP_KEEP; no-op se a cópia de hoje já existe."""
+    os.makedirs(BACKUP_DIR, exist_ok=True)
+    path = os.path.join(BACKUP_DIR, f"health-{date.today().isoformat()}.db")
+    if os.path.exists(path):
+        return
+    conn.execute("VACUUM INTO ?", (path,))
+    old = sorted(f for f in os.listdir(BACKUP_DIR)
+                 if f.startswith("health-") and f.endswith(".db"))
+    for name in old[:-BACKUP_KEEP]:
+        os.remove(os.path.join(BACKUP_DIR, name))
 
 
 def init_db():

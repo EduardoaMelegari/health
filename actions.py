@@ -3,9 +3,6 @@ ferramentas do coach (coach.py). Todas as funções recebem uma conexão sqlite
 explícita e, quando gravam, dão commit."""
 from datetime import date, datetime, timedelta
 
-WORKOUT_BY_WEEKDAY = {0: "A", 2: "B", 4: "C"}
-RUN_DAYS = {1, 3}
-
 
 def parse_date(s):
     return datetime.strptime(s, "%Y-%m-%d").date()
@@ -54,6 +51,53 @@ def food_log_for_date(conn, d):
     return [{"id": r["id"], "meal": r["meal"], "description": r["description"],
              "protein_g": r["protein_g"], "carbs_g": r["carbs_g"],
              "fat_g": r["fat_g"], "kcal": r["kcal"]} for r in rows]
+
+
+def meal_library(conn):
+    """Biblioteca de refeições no formato dos templates (Hoje e Dieta):
+    [{row, options: [{row, items, macros}]}]."""
+    cards = []
+    for m in conn.execute("SELECT * FROM meal ORDER BY sort"):
+        options = []
+        for o in conn.execute(
+                "SELECT * FROM meal_option WHERE meal_id = ? AND active = 1 ORDER BY sort, id",
+                (m["id"],)):
+            items = conn.execute(
+                "SELECT * FROM meal_item WHERE option_id = ? ORDER BY id", (o["id"],)).fetchall()
+            options.append({"row": o, "items": items, "macros": option_macros(conn, o["id"])})
+        cards.append({"row": m, "options": options})
+    return cards
+
+
+def tasks_for_date(conn, d):
+    """Tarefas agendadas para o dia (filtra por weekday) com o status de conclusão."""
+    wd = str(d.weekday())
+    rows = conn.execute(
+        "SELECT t.*, (SELECT 1 FROM task_done dn WHERE dn.template_id = t.id AND dn.date = ?) done"
+        " FROM task_template t WHERE t.active = 1 ORDER BY t.sort, t.id",
+        (d.isoformat(),)).fetchall()
+    return [t for t in rows if wd in t["weekdays"].split(",")]
+
+
+def set_task_done(conn, template_id, d, done):
+    """Marca/desmarca uma tarefa do checklist no dia. Idempotente."""
+    if done:
+        conn.execute(
+            "INSERT OR IGNORE INTO task_done (template_id, date, done_at) VALUES (?, ?, ?)",
+            (template_id, d, datetime.now().isoformat(timespec="seconds")))
+    else:
+        conn.execute("DELETE FROM task_done WHERE template_id = ? AND date = ?",
+                     (template_id, d))
+    conn.commit()
+
+
+def toggle_task(conn, template_id, d):
+    """Alterna o status de uma tarefa e devolve o novo estado (True = concluída)."""
+    existing = conn.execute(
+        "SELECT 1 FROM task_done WHERE template_id = ? AND date = ?",
+        (template_id, d)).fetchone()
+    set_task_done(conn, template_id, d, existing is None)
+    return existing is None
 
 
 def adherence(conn, days):
@@ -226,9 +270,10 @@ def update_meal_item(conn, item_id, grams=None, raw_factor=None,
 
 def update_targets(conn, **fields):
     """Atualiza metas em config. Chaves aceitas: kcal_treino, kcal_descanso,
-    protein_g, carb_treino, carb_descanso, fat_g, milestones."""
+    protein_g, carb_treino, carb_descanso, fat_g, milestones, review_days, height_m."""
     allowed = {"kcal_treino", "kcal_descanso", "protein_g",
-               "carb_treino", "carb_descanso", "fat_g", "milestones"}
+               "carb_treino", "carb_descanso", "fat_g", "milestones",
+               "review_days", "height_m"}
     changed = {}
     for key, value in fields.items():
         if key in allowed and value is not None:

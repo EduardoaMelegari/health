@@ -2,9 +2,11 @@
 progresso e edita o plano via tool use. Usado por app.py."""
 import json
 import os
+import threading
 from datetime import date, datetime, timedelta
 
 import actions
+import db
 
 _WD = ["segunda", "terça", "quarta", "quinta", "sexta", "sábado", "domingo"]
 _MO = ["janeiro", "fevereiro", "março", "abril", "maio", "junho", "julho",
@@ -27,8 +29,8 @@ def month_label(iso):
     return f"{_MO[d.month - 1].capitalize()} de {d.year}"
 
 MODEL = os.environ.get("ANTHROPIC_MODEL", "claude-sonnet-5")
-# resumo de continuidade é tarefa simples; pode apontar p/ um modelo mais barato via env
-SUMMARY_MODEL = os.environ.get("COACH_SUMMARY_MODEL", MODEL)
+# resumo de continuidade é tarefa simples: Haiku por padrão (fração do custo)
+SUMMARY_MODEL = os.environ.get("COACH_SUMMARY_MODEL", "claude-haiku-4-5")
 # No Sonnet 5 o thinking adaptativo consome o MESMO orçamento de max_tokens. Com um teto
 # baixo o modelo gastava tudo pensando/chamando ferramentas e era truncado ANTES de
 # escrever a resposta (stop_reason=max_tokens) — daí o "(sem resposta)". Teto folgado +
@@ -81,6 +83,8 @@ Ferramentas:
 chame list_plan para pegar os IDs corretos.
 - Quando o Eduardo disser o que comeu, REGISTRE com log_food (estimando os macros) e \
 confirme numa frase o que lançou. Para corrigir, use remove_food_log com o id do get_progress.
+- Quando ele disser que fez algo da rotina (treino, corrida, pesagem, marmitas...), \
+marque no checklist com set_task_done (ids via list_tasks).
 - Você PODE editar direto a biblioteca (cardápio), o treino e as metas com as \
 ferramentas de edição. Sempre que editar, diga em uma frase clara o que mudou. O \
 Eduardo pode conferir e reverter nas páginas Dieta/Treino.
@@ -122,6 +126,19 @@ TOOLS = [
      "description": "Remove um lançamento do diário alimentar pelo id (os ids vêm do get_progress).",
      "input_schema": {"type": "object", "properties": {
          "id": {"type": "integer"}}, "required": ["id"]}},
+    {"name": "list_tasks",
+     "description": "Lista as tarefas do checklist agendadas para um dia, com id e status "
+                    "de conclusão. Use antes de marcar algo com set_task_done.",
+     "input_schema": {"type": "object", "properties": {
+         "date": {"type": "string", "description": "Data YYYY-MM-DD (padrão: hoje)"}}}},
+    {"name": "set_task_done",
+     "description": "Marca (done=true) ou desmarca (done=false) uma tarefa do checklist "
+                    "num dia. Use quando o Eduardo disser que fez (ou não fez) algo da rotina.",
+     "input_schema": {"type": "object", "properties": {
+         "template_id": {"type": "integer", "description": "Id da tarefa (via list_tasks)"},
+         "done": {"type": "boolean"},
+         "date": {"type": "string", "description": "Data YYYY-MM-DD (padrão: hoje)"}},
+         "required": ["template_id", "done"]}},
     {"name": "add_meal_option",
      "description": "Cria uma nova opção prática para uma refeição (ex.: nova opção de jantar). "
                     "Depois adicione os itens com add_meal_item.",
@@ -179,13 +196,16 @@ TOOLS = [
          "delete": {"type": "boolean"}},
          "required": ["exercise_id"]}},
     {"name": "update_targets",
-     "description": "Ajusta as metas de calorias/macros/marcos. Só envie os campos que mudam.",
+     "description": "Ajusta as metas de calorias/macros/marcos e parâmetros do plano. "
+                    "Só envie os campos que mudam.",
      "input_schema": {"type": "object", "properties": {
          "kcal_treino": {"type": "number"}, "kcal_descanso": {"type": "number"},
          "protein_g": {"type": "number"},
          "carb_treino": {"type": "number"}, "carb_descanso": {"type": "number"},
          "fat_g": {"type": "number"},
-         "milestones": {"type": "string", "description": "Marcos separados por vírgula, ex.: 90,87,84,81"}}}},
+         "milestones": {"type": "string", "description": "Marcos separados por vírgula, ex.: 90,87,84,81"},
+         "review_days": {"type": "integer", "description": "Ciclo de reavaliação em dias (padrão 28)"},
+         "height_m": {"type": "number", "description": "Altura em metros, ex.: 1.85"}}}},
 ]
 
 
@@ -212,6 +232,16 @@ def _dispatch(conn, name, args):
         if name == "remove_food_log":
             actions.delete_food_log(conn, args["id"])
             return "Lançamento removido.", False
+        if name == "list_tasks":
+            d = args.get("date") or date.today().isoformat()
+            tasks = actions.tasks_for_date(conn, actions.parse_date(d))
+            return json.dumps([
+                {"template_id": t["id"], "title": t["title"], "category": t["category"],
+                 "done": bool(t["done"])} for t in tasks], ensure_ascii=False), False
+        if name == "set_task_done":
+            d = args.get("date") or date.today().isoformat()
+            actions.set_task_done(conn, args["template_id"], d, args["done"])
+            return f"Tarefa {'concluída' if args['done'] else 'desmarcada'} em {d}.", False
         if name == "add_meal_option":
             oid = actions.add_meal_option(conn, args["meal_id"], args["name"], args.get("description", ""))
             return f"Opção criada (option_id={oid}). Adicione os itens com add_meal_item.", False
@@ -312,6 +342,17 @@ def _api_history(conn, day):
     # a janela não pode começar com tool_result órfão; corta até a 1ª mensagem 'limpa'
     while msgs and _starts_with_tool_result(msgs[0]):
         msgs.pop(0)
+    # tool_use sem o tool_result seguinte (processo morto no meio do loop) faria a
+    # API rejeitar TODO o dia; troca os tool_use pendentes por um texto neutro
+    for i, m in enumerate(msgs):
+        if m["role"] != "assistant" or not isinstance(m["content"], list):
+            continue
+        if not any(isinstance(b, dict) and b.get("type") == "tool_use" for b in m["content"]):
+            continue
+        nxt = msgs[i + 1] if i + 1 < len(msgs) else None
+        if nxt is None or not _starts_with_tool_result(nxt):
+            kept = [b for b in m["content"] if b.get("type") == "text"]
+            m["content"] = kept or [{"type": "text", "text": "(resposta interrompida)"}]
     return msgs
 
 
@@ -382,6 +423,30 @@ def _rollup_previous_days(conn, today):
     _set_cfg(conn, "coach_summary_through", rows[-1]["created_at"][:10])
 
 
+_rollup_lock = threading.Lock()
+
+
+def _rollup_previous_days_async(today):
+    """Dispara o rollup em background com conexão própria — não adiciona a latência
+    da chamada de resumo à 1ª mensagem do dia. O lock evita rollups concorrentes."""
+    if not _rollup_lock.acquire(blocking=False):
+        return
+
+    def work():
+        try:
+            conn = db.connect()
+            try:
+                _rollup_previous_days(conn, today)
+            finally:
+                conn.close()
+        except Exception:
+            pass
+        finally:
+            _rollup_lock.release()
+
+    threading.Thread(target=work, daemon=True).start()
+
+
 def reset(conn):
     conn.execute("UPDATE chat_message SET active = 0")
     conn.execute("DELETE FROM config WHERE key IN ('coach_summary', 'coach_summary_through')")
@@ -450,11 +515,9 @@ def chat(conn, user_text):
         raise RuntimeError("Coach não configurado (defina ANTHROPIC_API_KEY).")
 
     today = date.today().isoformat()
-    # ao virar o dia, condensa os dias anteriores num resumo de continuidade (não bloqueia o chat)
-    try:
-        _rollup_previous_days(conn, today)
-    except Exception:
-        pass
+    # ao virar o dia, condensa os dias anteriores num resumo de continuidade;
+    # roda em background — a 1ª mensagem do dia usa o resumo já persistido
+    _rollup_previous_days_async(today)
 
     _save(conn, "user", user_text, user_text)
 
