@@ -1,5 +1,6 @@
 {% extends "base.html" %}
 {% block title %}Coach · Saúde{% endblock %}
+{% block main_class %}wide{% endblock %}
 {% block content %}
 
 <div class="page-head">
@@ -13,53 +14,87 @@
 </div>
 {% else %}
 
-<div id="chat" data-last-date="{{ last_date }}">
-  {% set past = groups | selectattr("date", "lt", today) | list %}
-  {% set current = groups | rejectattr("date", "lt", today) | list %}
-  {% if past %}
-  <details class="past-days">
-    <summary>Conversas anteriores</summary>
-    {% for g in past %}
-    <div class="day-divider"><span>{{ g.label }}</span></div>
-    {% for m in g.messages %}
-    <div class="bubble {{ m.role }}">{{ m.text }}</div>
-    {% endfor %}
-    {% endfor %}
-  </details>
-  {% endif %}
-  {% for g in current %}
-  <div class="day-divider"><span>{{ g.label }}</span></div>
-  {% for m in g.messages %}
-  <div class="bubble {{ m.role }}">{{ m.text }}</div>
-  {% endfor %}
-  {% endfor %}
+<div class="chat-layout" id="layout" data-today="{{ today }}">
+  <div class="days-backdrop" onclick="Coach.closeDays()"></div>
+
+  <!-- lista lateral: uma conversa por dia (o coach já trata cada dia como uma thread) -->
+  <aside class="chat-days" id="days">
+    <div class="days-head">
+      <span>Conversas</span>
+      <button type="button" class="icon-btn days-close" onclick="Coach.closeDays()" aria-label="Fechar lista">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"/></svg>
+      </button>
+    </div>
+    <div class="days-list" id="days-list">
+      {% set ns = namespace(month="") %}
+      {% for g in groups | reverse %}
+      {% if g.month != ns.month %}{% set ns.month = g.month %}
+      <div class="days-month">{{ g.month }}</div>
+      {% endif %}
+      <button type="button" class="day-item{{ ' active' if g.date == today }}" data-date="{{ g.date }}"
+              onclick="Coach.show('{{ g.date }}')">
+        <span class="d-top">
+          <span class="d-label">{{ g.label }}</span>
+          <span class="d-count">{{ g.count }}</span>
+        </span>
+        <span class="d-preview">{{ g.preview or "sem mensagens" }}</span>
+      </button>
+      {% endfor %}
+    </div>
+    <button class="btn-danger days-clear" onclick="Coach.reset()">Apagar todo o histórico</button>
+  </aside>
+
+  <div class="chat-main">
+    <div class="chat-bar">
+      <button type="button" class="icon-btn days-toggle" onclick="Coach.openDays()" aria-label="Ver conversas">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 6h16M4 12h16M4 18h16"/></svg>
+      </button>
+      <div class="chat-title" id="chat-title">Hoje</div>
+    </div>
+
+    <div id="chat">
+      {% for g in groups %}
+      <div class="day-pane{{ ' active' if g.date == today }}" data-date="{{ g.date }}">
+        {% for m in g.messages %}
+        <div class="bubble {{ m.role }}">{{ m.text }}</div>
+        {% endfor %}
+        {% if g.date == today and not g.messages %}
+        <div class="suggestions" id="suggestions">
+          <button class="btn-ghost btn-sm" onclick="Coach.suggest(this)">Como está meu progresso?</button>
+          <button class="btn-ghost btn-sm" onclick="Coach.suggest(this)">Estou no ritmo pra bater o próximo marco?</button>
+          <button class="btn-ghost btn-sm" onclick="Coach.suggest(this)">Sugere uma opção nova de jantar prático</button>
+        </div>
+        {% endif %}
+      </div>
+      {% endfor %}
+    </div>
+
+    <div class="past-note">
+      <span>Conversa de um dia anterior — só leitura.</span>
+      <button class="btn-ghost btn-sm" onclick="Coach.showToday()">Voltar pra hoje</button>
+    </div>
+
+    <form class="composer" onsubmit="Coach.send(event)">
+      <textarea id="msg" rows="1" placeholder="Escreva pro coach…" autocomplete="off"
+                oninput="Coach.autogrow(this)" onkeydown="Coach.onKey(event)"></textarea>
+      <button class="btn send" type="submit" id="send" aria-label="Enviar">
+        <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 2 11 13M22 2l-7 20-4-9-9-4 20-7z"/></svg>
+      </button>
+    </form>
+  </div>
 </div>
-
-{% if not current %}
-<div class="suggestions" id="suggestions">
-  <button class="btn-ghost btn-sm" onclick="Coach.suggest(this)">Como está meu progresso?</button>
-  <button class="btn-ghost btn-sm" onclick="Coach.suggest(this)">Estou no ritmo pra bater o próximo marco?</button>
-  <button class="btn-ghost btn-sm" onclick="Coach.suggest(this)">Sugere uma opção nova de jantar prático</button>
-</div>
-{% endif %}
-
-<form class="composer" onsubmit="Coach.send(event)">
-  <textarea id="msg" rows="1" placeholder="Escreva pro coach…" autocomplete="off"
-            oninput="Coach.autogrow(this)" onkeydown="Coach.onKey(event)"></textarea>
-  <button class="btn send" type="submit" id="send" aria-label="Enviar">
-    <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 2 11 13M22 2l-7 20-4-9-9-4 20-7z"/></svg>
-  </button>
-</form>
-
-<button class="btn-danger" style="margin:4px auto 0;display:block" onclick="Coach.reset()">Nova conversa</button>
 
 {% endif %}
 
 {% endblock %}
 {% block scripts %}
+{% if configured %}
 <script>
 const Coach = {
+  layout: () => document.getElementById("layout"),
   el: () => document.getElementById("chat"),
+  pane: (d) => document.querySelector(`.day-pane[data-date="${d}"]`),
+  item: (d) => document.querySelector(`.day-item[data-date="${d}"]`),
 
   autogrow(t) { t.style.height = "auto"; t.style.height = Math.min(t.scrollHeight, 140) + "px"; },
 
@@ -77,7 +112,7 @@ const Coach = {
     div.className = "bubble " + role;
     if (role === "assistant") div.innerHTML = Coach.md(text);
     else div.textContent = text;
-    Coach.el().appendChild(div);
+    Coach.ensureToday().appendChild(div);
     div.scrollIntoView({ behavior: "smooth", block: "end" });
     return div;
   },
@@ -152,16 +187,74 @@ const Coach = {
       + "-" + String(n.getDate()).padStart(2, "0");
   },
 
-  // insere o divisor "Hoje" quando a 1ª mensagem do dia é enviada
-  maybeDayDivider() {
-    const chat = Coach.el();
-    const today = Coach.todayLocal();
-    if (chat.dataset.lastDate === today) return;
-    const div = document.createElement("div");
-    div.className = "day-divider";
-    div.innerHTML = "<span>Hoje</span>";
-    chat.appendChild(div);
-    chat.dataset.lastDate = today;
+  monthLocal() {
+    const s = new Date().toLocaleDateString("pt-BR", { month: "long", year: "numeric" });
+    return s.charAt(0).toUpperCase() + s.slice(1);
+  },
+
+  // ---------------- lista lateral de dias
+
+  openDays() { Coach.layout().classList.add("days-open"); },
+  closeDays() { Coach.layout().classList.remove("days-open"); },
+
+  show(d) {
+    document.querySelectorAll(".day-pane").forEach((p) => p.classList.toggle("active", p.dataset.date === d));
+    document.querySelectorAll(".day-item").forEach((b) => b.classList.toggle("active", b.dataset.date === d));
+    const item = Coach.item(d);
+    document.getElementById("chat-title").textContent = item ? item.querySelector(".d-label").textContent : d;
+    // só o dia de hoje aceita mensagens novas (o contexto do coach é diário)
+    Coach.layout().classList.toggle("viewing-past", d !== Coach.todayLocal());
+    Coach.closeDays();
+  },
+
+  showToday() {
+    if (Coach.pane(Coach.todayLocal())) Coach.show(Coach.todayLocal());
+    else Coach.ensureToday();  // virou o dia com a página aberta
+  },
+
+  // cria o painel + item do dia de hoje quando a página virou a noite aberta
+  ensureToday() {
+    const d = Coach.todayLocal();
+    let pane = Coach.pane(d);
+    if (pane) return pane;
+
+    pane = document.createElement("div");
+    pane.className = "day-pane active";
+    pane.dataset.date = d;
+    Coach.el().appendChild(pane);
+    document.querySelectorAll(".day-pane").forEach((p) => p.classList.toggle("active", p === pane));
+
+    const item = document.createElement("button");
+    item.type = "button";
+    item.className = "day-item active";
+    item.dataset.date = d;
+    item.onclick = () => Coach.show(d);
+    item.innerHTML = '<span class="d-top"><span class="d-label">Hoje</span>'
+      + '<span class="d-count">0</span></span><span class="d-preview">sem mensagens</span>';
+    const list = document.getElementById("days-list");
+    const first = list.firstElementChild;
+    list.prepend(item);
+    const mes = Coach.monthLocal();
+    if (!first || !first.classList.contains("days-month") || first.textContent.trim() !== mes) {
+      const h = document.createElement("div");
+      h.className = "days-month";
+      h.textContent = mes;
+      list.prepend(h);
+    }
+    document.querySelectorAll(".day-item").forEach((b) => b.classList.toggle("active", b === item));
+    document.getElementById("chat-title").textContent = "Hoje";
+    Coach.layout().classList.remove("viewing-past");
+    return pane;
+  },
+
+  // mantém contagem e prévia do dia em dia com o que está na tela
+  refreshDayItem(d) {
+    const pane = Coach.pane(d), item = Coach.item(d);
+    if (!pane || !item) return;
+    const bubbles = pane.querySelectorAll(".bubble:not(.typing)");
+    item.querySelector(".d-count").textContent = bubbles.length;
+    const first = pane.querySelector(".bubble.user");
+    if (first) item.querySelector(".d-preview").textContent = first.textContent;
   },
 
   async send(e) {
@@ -174,8 +267,9 @@ const Coach = {
 
     input.value = "";
     input.style.height = "auto";
-    Coach.maybeDayDivider();
+    Coach.showToday();
     Coach.addBubble("user", text);
+    Coach.refreshDayItem(Coach.todayLocal());
 
     const send = document.getElementById("send");
     send.disabled = true;
@@ -198,13 +292,14 @@ const Coach = {
       typing.remove();
       Coach.addBubble("assistant error", "Sem conexão com o servidor.");
     } finally {
+      Coach.refreshDayItem(Coach.todayLocal());
       send.disabled = false;
       input.focus();
     }
   },
 
   async reset() {
-    if (!confirm("Apagar esta conversa e começar de novo?")) return;
+    if (!confirm("Apagar TODAS as conversas (todos os dias) e começar de novo?")) return;
     await fetch("/api/chat/reset", { method: "POST" });
     location.reload();
   },
@@ -214,5 +309,13 @@ const Coach = {
 document.querySelectorAll("#chat .bubble.assistant").forEach(function (b) {
   b.innerHTML = Coach.md(b.textContent);
 });
+
+addEventListener("keydown", (e) => { if (e.key === "Escape") Coach.closeDays(); });
+
+// abre no dia de hoje, já rolado até a última mensagem
+Coach.showToday();
+const _hoje = Coach.pane(Coach.todayLocal());
+if (_hoje && _hoje.lastElementChild) _hoje.lastElementChild.scrollIntoView({ block: "end" });
 </script>
+{% endif %}
 {% endblock %}

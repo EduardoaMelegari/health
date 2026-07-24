@@ -20,6 +20,12 @@ def day_label(iso):
         return "Ontem"
     return f"{_WD[d.weekday()].capitalize()}, {d.day} de {_MO[d.month - 1]}"
 
+
+def month_label(iso):
+    """Cabeçalho de mês na lista de conversas — 'Julho de 2026'."""
+    d = date.fromisoformat(iso)
+    return f"{_MO[d.month - 1].capitalize()} de {d.year}"
+
 MODEL = os.environ.get("ANTHROPIC_MODEL", "claude-sonnet-5")
 # resumo de continuidade é tarefa simples; pode apontar p/ um modelo mais barato via env
 SUMMARY_MODEL = os.environ.get("COACH_SUMMARY_MODEL", MODEL)
@@ -263,17 +269,36 @@ def _save(conn, role, content, text=None):
     conn.commit()
 
 
+def _preview(messages):
+    """Primeira fala do Eduardo no dia, encurtada — vira o resumo na lista lateral."""
+    for m in messages:
+        if m["role"] == "user":
+            t = " ".join(m["text"].split())
+            return t if len(t) <= 70 else t[:69].rstrip() + "…"
+    return ""
+
+
 def load_history_grouped(conn):
-    """Mensagens para exibir na UI, agrupadas por dia (divisor de data)."""
+    """Mensagens para exibir na UI, agrupadas por dia — cada dia é uma conversa na
+    lista lateral. O dia de hoje entra sempre, mesmo vazio: é a thread ativa (só nela
+    dá pra escrever, porque o contexto do coach é escopado ao dia)."""
     rows = conn.execute(
         "SELECT role, text, created_at FROM chat_message"
-        " WHERE active = 1 AND text IS NOT NULL ORDER BY id").fetchall()
+        " WHERE active = 1 AND text IS NOT NULL ORDER BY created_at, id").fetchall()
     groups = []
     for r in rows:
         d = r["created_at"][:10]
         if not groups or groups[-1]["date"] != d:
-            groups.append({"date": d, "label": day_label(d), "messages": []})
+            groups.append({"date": d, "label": day_label(d), "month": month_label(d),
+                           "messages": []})
         groups[-1]["messages"].append({"role": r["role"], "text": r["text"]})
+    today = date.today().isoformat()
+    if not groups or groups[-1]["date"] != today:
+        groups.append({"date": today, "label": "Hoje", "month": month_label(today),
+                       "messages": []})
+    for g in groups:
+        g["count"] = len(g["messages"])
+        g["preview"] = _preview(g["messages"])
     return groups
 
 

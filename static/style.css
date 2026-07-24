@@ -283,15 +283,91 @@ nav a.active { color: var(--brand); border-top-color: var(--brand); font-weight:
 nav svg { width: 22px; height: 22px; }
 
 /* ---------- coach / chat ---------- */
-#chat { display: flex; flex-direction: column; gap: 10px; margin-bottom: 14px; }
-.day-divider {
-  display: flex; align-items: center; gap: 10px;
-  color: var(--muted); font-size: 0.72rem; margin: 4px 2px;
+/* duas colunas no desktop: lista de conversas (uma por dia) + thread do dia */
+.chat-layout { position: relative; }
+.chat-main { min-width: 0; }
+.chat-bar { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
+.chat-title { font-size: 0.85rem; font-weight: 600; color: var(--text-2); }
+.icon-btn {
+  flex: 0 0 36px; width: 36px; height: 36px; display: grid; place-items: center;
+  background: var(--card); border: 1px solid var(--border); border-radius: var(--radius-sm);
+  color: var(--text-2); cursor: pointer; padding: 0;
 }
-.day-divider::before, .day-divider::after {
-  content: ""; flex: 1; height: 1px; background: var(--hair);
+.icon-btn:hover { border-color: var(--brand); color: var(--brand); }
+.icon-btn svg { width: 18px; height: 18px; }
+
+#chat { margin-bottom: 14px; }
+.day-pane { display: none; flex-direction: column; gap: 10px; }
+.day-pane.active { display: flex; }
+
+/* lista lateral de dias */
+.chat-days {
+  background: var(--card); border: 1px solid var(--border);
+  border-radius: var(--radius); box-shadow: var(--shadow);
+  padding: 10px; display: flex; flex-direction: column; gap: 4px;
 }
-.day-divider span { white-space: nowrap; }
+.days-head {
+  display: flex; align-items: center; justify-content: space-between; gap: 8px;
+  padding: 2px 6px; color: var(--muted);
+  font-size: 0.7rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em;
+}
+.days-list { overflow-y: auto; display: flex; flex-direction: column; gap: 2px; }
+.days-month {
+  padding: 10px 6px 3px; color: var(--muted);
+  font-size: 0.68rem; text-transform: uppercase; letter-spacing: 0.05em;
+}
+.days-month:first-child { padding-top: 4px; }
+.day-item {
+  display: flex; flex-direction: column; gap: 2px; width: 100%; text-align: left;
+  font: inherit; color: var(--text); cursor: pointer;
+  background: transparent; border: 0; border-radius: var(--radius-sm); padding: 8px 10px;
+}
+.day-item:hover { background: var(--hair); }
+.day-item.active { background: var(--accent-soft); }
+.day-item.active .d-label { color: var(--accent); }
+.d-top { display: flex; align-items: center; gap: 8px; }
+.d-label { font-size: 0.85rem; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.d-count {
+  margin-left: auto; flex: none; font-family: var(--font-mono); font-size: 0.65rem;
+  color: var(--muted); background: var(--page); border-radius: 999px; padding: 1px 7px;
+}
+.d-preview { font-size: 0.75rem; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.days-clear { margin-top: 4px; border-top: 1px solid var(--hair); padding-top: 8px; }
+
+/* aviso de dia anterior (só leitura) */
+.past-note {
+  display: none; align-items: center; justify-content: space-between; gap: 10px;
+  flex-wrap: wrap; font-size: 0.8rem; color: var(--muted);
+  background: var(--card); border: 1px dashed var(--border);
+  border-radius: var(--radius); padding: 10px 12px;
+}
+.chat-layout.viewing-past .past-note { display: flex; }
+.chat-layout.viewing-past .composer { display: none; }
+
+@media (min-width: 900px) {
+  main.wide { max-width: 1000px; }
+  .chat-layout { display: grid; grid-template-columns: 258px minmax(0, 1fr); gap: 22px; align-items: start; }
+  .chat-days { position: sticky; top: 20px; max-height: calc(100vh - 110px); }
+  .days-backdrop, .days-close, .days-toggle { display: none; }
+}
+
+/* no celular a lista vira gaveta lateral */
+@media (max-width: 899px) {
+  .chat-days {
+    position: fixed; z-index: 60; top: 0; bottom: 0; left: 0; width: min(300px, 84vw);
+    border-radius: 0; border-top: 0; border-bottom: 0; border-left: 0;
+    padding-top: calc(10px + env(safe-area-inset-top));
+    padding-bottom: calc(10px + env(safe-area-inset-bottom));
+    transform: translateX(-101%); transition: transform 0.22s ease;
+  }
+  .chat-layout.days-open .chat-days { transform: none; }
+  .days-backdrop {
+    position: fixed; inset: 0; z-index: 55; background: rgba(15, 23, 42, 0.45);
+    opacity: 0; pointer-events: none; transition: opacity 0.22s ease;
+  }
+  .chat-layout.days-open .days-backdrop { opacity: 1; pointer-events: auto; }
+}
+
 .bubble {
   max-width: 85%; padding: 11px 14px; border-radius: 16px;
   font-size: 0.92rem; line-height: 1.4; word-wrap: break-word; overflow-wrap: anywhere;
@@ -329,17 +405,6 @@ nav svg { width: 22px; height: 22px; }
 }
 .bubble.typing { color: var(--muted); font-style: italic; }
 .bubble.error { border-color: var(--danger); color: var(--danger); }
-
-/* histórico de dias anteriores, colapsado */
-.past-days { display: flex; flex-direction: column; gap: 10px; }
-.past-days > summary {
-  cursor: pointer; list-style: none; text-align: center;
-  color: var(--muted); font-size: 0.78rem; padding: 2px 0;
-}
-.past-days > summary::-webkit-details-marker { display: none; }
-.past-days > summary::before { content: "▸ "; }
-.past-days[open] > summary::before { content: "▾ "; }
-.past-days[open] > summary { margin-bottom: 2px; }
 
 .suggestions { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 12px; }
 
