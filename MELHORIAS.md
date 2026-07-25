@@ -46,8 +46,29 @@ python app.py           # migra o banco (WAL, meal.shopping, drop meal_choice) e
 No servidor: `docker compose up -d --build` (a imagem nova instala do
 requirements.txt e sobe o gunicorn com gthread/timeout).
 
+---
+
+# Melhorias — 25/07/2026
+
+| # | Melhoria | Detalhe |
+|---|----------|---------|
+| 20 | **Erros do backend visíveis no frontend** | `App.post` agora lê o `{error: "..."}` que as rotas devolvem e mostra num toast (canto inferior), inclusive quando não há conexão. Antes, salvar item/opção/treino falhava em silêncio ou com um "Falha na requisição" genérico |
+| 21 | **ETA do marco pela média móvel** | "Próximo marco" e "faltam N semanas" em `weight_stats` agora partem da média móvel (como o ritmo já fazia) — o número cru do dia oscila 1–2 kg por água/intestino e fazia o ETA pular |
+
+### Sobre a sidebar do Coach
+
+A lista lateral de conversas por dia **já existe** (commit `58b3f87`, anterior a
+esta revisão): no desktop (≥900 px) é uma coluna fixa com prévia, contagem e
+cabeçalhos por mês; no celular abre pelo botão ☰ no topo do chat. Cada dia é uma
+thread — dias anteriores ficam somente leitura, com "Voltar pra hoje". Se ela
+não aparece no seu uso, é porque **o servidor ainda roda a imagem antiga**:
+`git pull && docker compose up -d --build` resolve.
+
 ## Não feito (consciente)
 
+- **Streaming da resposta do coach** — a conversa só aparece quando o loop
+  inteiro termina (30 s+ em análises longas). Vale fazer via SSE, mas é uma
+  mudança maior (backend + frontend) e precisa de teste com a chave da API.
 - **Testes automatizados** — o projeto decide não ter suíte (ver CLAUDE.md);
   a validação continua sendo rodar o app e exercitar as páginas.
 - **Autenticação** — segue fora do escopo (rede local / reverse proxy).

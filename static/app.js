@@ -1,12 +1,38 @@
 const App = {
   async post(url, body) {
-    const res = await fetch(url, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(body),
-    });
-    if (!res.ok) throw new Error("Falha na requisição");
+    let res;
+    try {
+      res = await fetch(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+    } catch {
+      App.toast("Sem conexão com o servidor.");
+      throw new Error("Sem conexão com o servidor.");
+    }
+    if (!res.ok) {
+      // as rotas devolvem {error: "..."} — mostra a mensagem real, não um genérico
+      let msg = "Falha na requisição.";
+      try { msg = (await res.json()).error || msg; } catch {}
+      App.toast(msg);
+      throw new Error(msg);
+    }
     return res.json();
+  },
+
+  _toastTimer: null,
+  toast(msg) {
+    let t = document.getElementById("toast");
+    if (!t) {
+      t = document.createElement("div");
+      t.id = "toast";
+      document.body.appendChild(t);
+    }
+    t.textContent = msg;
+    t.classList.add("show");
+    clearTimeout(App._toastTimer);
+    App._toastTimer = setTimeout(() => t.classList.remove("show"), 4000);
   },
 
   fmt(n) {

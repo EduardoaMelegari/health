@@ -140,13 +140,16 @@ def weight_stats(conn, cfg):
         if span > 0:
             rate = round((moving[-1] - moving[-len(recent)]) / (span / 7), 2)
 
+    # marco e ETA partem da MÉDIA MÓVEL (como o ritmo) — o número cru do dia
+    # oscila 1–2 kg por água/intestino e fazia o "faltam N semanas" pular
     next_milestone = weeks_to = None
-    if latest:
-        below = [m for m in milestones if m < latest["weight_kg"]]
+    if moving:
+        current = moving[-1]
+        below = [m for m in milestones if m < current]
         if below:
             next_milestone = max(below)
             if rate and rate < 0:
-                weeks_to = round((latest["weight_kg"] - next_milestone) / -rate)
+                weeks_to = round((current - next_milestone) / -rate)
     return {
         "history": [{"date": r["date"], "weight_kg": r["weight_kg"]} for r in rows],
         "moving_avg": moving,
