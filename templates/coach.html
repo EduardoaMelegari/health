@@ -74,14 +74,16 @@
       <button class="btn-ghost btn-sm" onclick="Coach.showToday()">Voltar pra hoje</button>
     </div>
 
-    <form class="composer" onsubmit="Coach.send(event)">
-      <textarea id="msg" rows="1" placeholder="Escreva pro coach…" autocomplete="off"
-                oninput="Coach.autogrow(this)"></textarea>
-      <button class="btn brand send" type="submit" id="send" aria-label="Enviar">
-        <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 2 11 13M22 2l-7 20-4-9-9-4 20-7z"/></svg>
-      </button>
-    </form>
-    <p class="composer-hint">Enter quebra linha · enviar pelo botão</p>
+    <div class="composer-box">
+      <form class="composer" onsubmit="Coach.send(event)">
+        <textarea id="msg" rows="1" placeholder="Escreva pro coach…" autocomplete="off"
+                  oninput="Coach.autogrow(this)"></textarea>
+        <button class="btn brand send" type="submit" id="send" aria-label="Enviar">
+          <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 2 11 13M22 2l-7 20-4-9-9-4 20-7z"/></svg>
+        </button>
+      </form>
+      <p class="composer-hint">Enter quebra linha · enviar pelo botão</p>
+    </div>
   </div>
 </div>
 

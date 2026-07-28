@@ -42,10 +42,10 @@
     {% if stats.next_milestone_kg %}
       Próximo marco <strong>{{ stats.next_milestone_kg | num }} kg</strong>:
       faltam <strong>{{ (stats.moving_now_kg - stats.next_milestone_kg) | round(1) | num }} kg</strong>
-      {% if stats.weeks_to_milestone %}
+      {%- if stats.weeks_to_milestone %}
         — <strong class="hl">~{{ stats.weeks_to_milestone }} semana{{ 's' if stats.weeks_to_milestone != 1 }}</strong> nesse ritmo.
-      {% else %}.
-      {% endif %}
+      {%- else %}.
+      {%- endif %}
     {% endif %}
     {% if stats.weeks_to_goal %}
       Meta final em ~{{ stats.weeks_to_goal }} semanas{{ ' (%s)' % goal_month if goal_month }}.
@@ -131,7 +131,7 @@
 
 {% endblock %}
 {% block scripts %}
-<script src="{{ url_for('static', filename='chart.umd.js') }}"></script>
+<script src="{{ url_for('static', filename='chart.umd.js') }}?v={{ asset_v }}"></script>
 <script>
 async function saveWeight() {
   const kg = document.getElementById("w-kg").value.replace(",", ".");

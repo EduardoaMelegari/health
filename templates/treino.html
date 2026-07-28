@@ -37,7 +37,7 @@
 {% set open_this = not ns.opened and not c.today %}
 {% if open_this %}{% set ns.opened = true %}{% endif %}
 <details class="card ex-card" data-ex="{{ c.row.id }}" {{ 'open' if open_this }}>
-  <summary>
+  <summary><span class="srow">
     <span class="ex-name">{{ c.row.name }}</span>
     <span class="ex-meta">
       {{ c.row.target_sets }}×{{ c.row.target_reps }}{{ ' s' if is_time }}
@@ -49,7 +49,7 @@
     {% if c.suggestion %}
     <span class="ex-pill">↑ {{ c.suggestion | num }}{{ ' s' if is_time else ' kg' }}</span>
     {% endif %}
-  </summary>
+  </span></summary>
 
   {% if c.last_sets %}
   <span class="ex-last">

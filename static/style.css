@@ -182,9 +182,9 @@ section + section { margin-top: 26px; }
 /* ---------- Hoje: cabeçalho do dia (donut de kcal + macros + aderência) ---------- */
 .day-head {
   display: flex; align-items: center; gap: 16px;
-  background: var(--card); border: 1px solid var(--border);
-  border-radius: var(--radius); box-shadow: var(--shadow);
-  padding: 18px 16px; margin-bottom: 18px;
+  background: var(--card); border-bottom: 1px solid var(--border);
+  /* faixa branca full-bleed (mockup 2a): sangra o padding do main, sem card */
+  margin: -20px -16px 18px; padding: 18px 16px 14px;
 }
 .kcal-ring {
   --pct: 0%; --ring: var(--action);
@@ -254,10 +254,11 @@ section + section { margin-top: 26px; }
   background: var(--sunk); border: 1px solid var(--border);
   border-radius: var(--radius); padding: 12px 16px; margin-top: 14px;
 }
-.done-panel > summary { list-style: none; display: flex; justify-content: space-between; align-items: center; padding: 0; }
+.done-panel > summary { list-style: none; display: block; cursor: pointer; padding: 0; }
 .done-panel > summary::-webkit-details-marker { display: none; }
-.done-panel > summary::after { content: "▾"; font-size: 0.75rem; color: var(--muted); }
-.done-panel[open] > summary::after { content: "▴"; }
+.done-panel .srow { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+.done-panel .srow::after { content: "▾"; font-size: 0.75rem; color: var(--muted); }
+.done-panel[open] .srow::after { content: "▴"; }
 .done-list { margin-top: 6px; }
 .done-row { display: flex; align-items: center; gap: 10px; padding: 9px 0; border-bottom: 1px solid var(--border); }
 .done-row .em { flex: none; font-size: 15px; }
@@ -374,11 +375,15 @@ tr:last-child td { border-bottom: 0; }
 }
 .workout-tabs a.active { color: var(--brand); font-weight: 600; border-bottom-color: var(--brand); }
 
+/* summary com layout: o flex fica num span interno (.srow) porque o Safari do
+   iOS ignora display:flex aplicado direto no <summary> e desmonta o cabeçalho */
+.srow { display: flex; align-items: center; gap: 8px; }
+
 .ex-card { padding: 12px 16px; }
-.ex-card > summary { list-style: none; display: flex; align-items: center; gap: 8px; cursor: pointer; }
+.ex-card > summary { list-style: none; display: block; cursor: pointer; }
 .ex-card > summary::-webkit-details-marker { display: none; }
-.ex-card > summary::after { content: "▾"; font-size: 0.75rem; color: var(--muted); }
-.ex-card[open] > summary::after { content: "▴"; }
+.ex-card .srow::after { content: "▾"; font-size: 0.75rem; color: var(--muted); }
+.ex-card[open] .srow::after { content: "▴"; }
 .ex-card[open] { padding: 14px 16px; }
 .ex-card[open] .ex-short { display: none; }
 .ex-name { flex: 1; min-width: 0; font-size: 0.875rem; font-weight: 600; }
@@ -413,20 +418,22 @@ tr:last-child td { border-bottom: 0; }
 .card-head { display: flex; justify-content: space-between; align-items: center; gap: 10px; }
 
 .meal-card { padding: 14px 16px; }
-.meal-card > summary { list-style: none; display: flex; align-items: baseline; gap: 8px; cursor: pointer; }
+.meal-card > summary { list-style: none; display: block; cursor: pointer; }
 .meal-card > summary::-webkit-details-marker { display: none; }
-.meal-card > summary::after { content: "▾"; font-size: 0.75rem; color: var(--muted); }
-.meal-card[open] > summary::after { content: "▴"; }
+.meal-card > summary .srow { align-items: baseline; }
+.meal-card > summary .srow::after { content: "▾"; font-size: 0.75rem; color: var(--muted); }
+.meal-card[open] > summary .srow::after { content: "▴"; }
 .meal-name { flex: 1; min-width: 0; font-size: 0.9375rem; font-weight: 700; }
 .meal-meta { font-size: 0.6875rem; color: var(--muted); }
 
 .opt-list { margin-top: 4px; }
 .opt-item { border-bottom: 1px solid var(--border); }
 .opt-item:last-of-type { border-bottom: 0; }
-.opt-item > summary { list-style: none; display: flex; align-items: center; gap: 10px; padding: 10px 0; cursor: pointer; }
+.opt-item > summary { list-style: none; display: block; padding: 10px 0; cursor: pointer; }
 .opt-item > summary::-webkit-details-marker { display: none; }
-.opt-item > summary::after { content: "editar ▸"; flex: none; font-size: 0.75rem; font-weight: 500; color: var(--brand); }
-.opt-item[open] > summary::after { content: "fechar ▴"; }
+.opt-item .srow { gap: 10px; }
+.opt-item .srow::after { content: "editar ▸"; flex: none; font-size: 0.75rem; font-weight: 500; color: var(--brand); }
+.opt-item[open] > summary .srow::after { content: "fechar ▴"; }
 .opt-item .o-txt { flex: 1; min-width: 0; display: flex; flex-direction: column; }
 .opt-item .o-name { font-size: 0.8125rem; font-weight: 600; }
 .opt-item .o-mac { font-family: var(--font-mono); font-size: 0.6875rem; font-weight: 500; color: var(--muted); }
@@ -621,11 +628,13 @@ nav svg { width: 22px; height: 22px; }
   border-radius: 999px; font-size: 0.75rem; padding: 6px 12px;
 }
 
-.composer {
-  display: flex; align-items: flex-end; gap: 8px;
+/* form + hint num bloco sticky único — sticky separado neles fazia o hint
+   sobrepor o form quando ambos "grudavam" ao rolar a conversa */
+.composer-box {
   position: sticky; bottom: calc(72px + env(safe-area-inset-bottom));
   background: var(--page); padding-top: 6px;
 }
+.composer { display: flex; align-items: flex-end; gap: 8px; }
 .composer textarea {
   flex: 1; resize: none; border-radius: 12px; padding: 11px 13px;
   max-height: 140px; overflow-y: auto; line-height: 1.35; font-size: 0.8125rem;
@@ -635,10 +644,7 @@ nav svg { width: 22px; height: 22px; }
   border-radius: 12px; display: grid; place-items: center;
 }
 .btn.send:disabled { opacity: 0.5; }
-.composer-hint {
-  position: sticky; bottom: calc(60px + env(safe-area-inset-bottom));
-  background: var(--page); font-size: 0.6875rem; color: var(--muted); padding: 6px 2px 0;
-}
+.composer-hint { font-size: 0.6875rem; color: var(--muted); padding: 6px 2px 0; }
 
 code {
   font-family: var(--font-mono); font-size: 0.85em;

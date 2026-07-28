@@ -1,5 +1,6 @@
 import csv
 import io
+import os
 from datetime import date, timedelta
 
 from flask import Flask, g, jsonify, render_template, request, Response
@@ -10,6 +11,17 @@ import db
 import seed
 
 app = Flask(__name__)
+
+# ?v= nos links de CSS/JS: muda a cada deploy (mtime dos arquivos do static/),
+# forçando o browser/proxy a baixar a versão nova — sem isso, um redesign chega
+# com o HTML novo + CSS velho em cache e a página inteira sai desconfigurada
+ASSET_V = str(max(int(os.path.getmtime(e.path)) for e in os.scandir(
+    os.path.join(os.path.dirname(os.path.abspath(__file__)), "static"))))
+
+
+@app.context_processor
+def inject_asset_v():
+    return {"asset_v": ASSET_V}
 
 WEEKDAYS_PT = ["segunda", "terça", "quarta", "quinta", "sexta", "sábado", "domingo"]
 MONTHS_PT = ["janeiro", "fevereiro", "março", "abril", "maio", "junho", "julho",

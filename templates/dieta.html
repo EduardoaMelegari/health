@@ -21,23 +21,23 @@
 {% for m in meals %}
 {% set kcal_avg = (m.options | sum(attribute='macros.kcal') / (m.options | length)) if m.options else 0 %}
 <details class="card meal-card">
-  <summary>
+  <summary><span class="srow">
     <span class="meal-name">{{ m.row.name }}</span>
     <span class="meal-meta">
       {{ m.options | length }} {{ 'opção' if m.options | length == 1 else 'opções' }}
       {%- if m.options %} · ~{{ kcal_avg | round | int }} kcal{% endif %}
     </span>
-  </summary>
+  </span></summary>
 
   <div class="opt-list">
     {% for opt in m.options %}
     <details class="opt-item">
-      <summary>
+      <summary><span class="srow">
         <span class="o-txt">
           <span class="o-name">{{ opt.row.name }}</span>
           <span class="o-mac">{{ opt.macros.kcal | round | int }} kcal · P {{ opt.macros.protein_g | round | int }} g · {{ opt['items'] | length }} {{ 'item' if opt['items'] | length == 1 else 'itens' }}</span>
         </span>
-      </summary>
+      </span></summary>
 
       {% if opt.row.description %}<p class="notice">{{ opt.row.description }}</p>{% endif %}
 
