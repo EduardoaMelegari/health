@@ -152,8 +152,9 @@ section + section { margin-top: 26px; }
 .act-ic.brand { background: var(--brand-soft); }
 .act-ic.action { background: var(--action-soft); }
 .act-txt { flex: 1; min-width: 0; display: flex; flex-direction: column; }
-.act-t { font-size: 0.875rem; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.act-s { font-size: 0.75rem; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* nomes longos quebram linha — cortar com "…" escondia o que foi comido */
+.act-t { font-size: 0.875rem; font-weight: 600; overflow-wrap: anywhere; }
+.act-s { font-size: 0.75rem; color: var(--muted); overflow-wrap: anywhere; }
 .act-s.mono { font-weight: 500; }
 .act .btn-sm { flex-shrink: 0; }
 /* refeição mais adiante no dia: presente, sem disputar atenção — mostra o
@@ -208,12 +209,13 @@ section + section { margin-top: 26px; }
 .done-list { margin-top: 6px; }
 .done-row { display: flex; align-items: center; gap: 10px; padding: 9px 0; border-bottom: 1px solid var(--border); }
 .done-row .em { flex: none; font-size: 15px; }
-.done-row .t { flex: 1; min-width: 0; font-size: 0.8125rem; font-weight: 500; color: var(--text-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.done-row .t { flex: 1; min-width: 0; font-size: 0.8125rem; font-weight: 500; color: var(--text-2); overflow-wrap: anywhere; }
 .done-v { font-size: 0.75rem; font-weight: 500; color: var(--muted); }
 /* item do diário em 2 linhas: descrição não empurra mais os macros pra baixo */
 .logitem { padding: 9px 0; border-bottom: 1px solid var(--border); }
-.li-top { display: flex; align-items: center; gap: 10px; }
-.li-main { flex: 1; min-width: 0; font-size: 0.8125rem; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.li-top { display: flex; align-items: flex-start; gap: 10px; } /* multilinha: ícone e × na 1ª linha */
+/* descrição completa, quebrando linha — o "…" do mockup cortava o registro */
+.li-main { flex: 1; min-width: 0; font-size: 0.8125rem; font-weight: 500; overflow-wrap: anywhere; }
 .li-main b { font-weight: 700; }
 .li-macros { display: block; font-size: 0.75rem; font-weight: 500; color: var(--muted); padding-left: 25px; }
 .done-list > :last-child { border-bottom: 0; }

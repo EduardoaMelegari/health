@@ -132,3 +132,11 @@ cliente fake (deltas → `turn_end` → `done` chegam corretos e persistem); o r
 foi exercitado nas páginas com screenshots nos dois temas. **Falta validar o
 streaming com a chave real no servidor** — se algo falhar lá, o `/api/chat`
 antigo segue funcionando como fallback trocando 1 linha no `coach.html`.
+
+## Ajustes de uso — 27/07/2026 (reportados pelo Eduardo)
+
+| # | Problema | Correção |
+|---|----------|----------|
+| B12 | Registro longo no "feito hoje" era cortado com "…" ("…100g feijão cozid…") | Descrições, títulos de ação e tarefas quebram linha em vez de truncar (`overflow-wrap: anywhere`); ícone e × alinham na 1ª linha |
+| B13 | O × excluía o registro no primeiro toque — fácil de acionar sem querer | `confirm()` com a descrição do item antes de excluir (mesmo padrão do resto do app) |
+| B14 | "Jantar: Jantar: 200g…" — o quick-log às vezes repete a refeição na descrição e o app prefixava de novo | O prefixo `<b>Refeição:</b>` só entra quando a descrição ainda não começa com o nome da refeição (template + render JS) |

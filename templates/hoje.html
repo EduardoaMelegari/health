@@ -143,7 +143,8 @@
       <div class="logitem" data-id="{{ e.id }}">
         <div class="li-top">
           <span class="em">{{ MEAL_EM.get(e.meal | lower, '🍽️') if e.meal else '🍽️' }}</span>
-          <span class="li-main">{% if e.meal %}<b>{{ e.meal }}:</b> {% endif %}{{ e.description }}</span>
+          {# o quick-log às vezes já repete a refeição na descrição — não duplicar o prefixo #}
+          <span class="li-main">{% if e.meal and not e.description.lower().startswith(e.meal.lower()) %}<b>{{ e.meal }}:</b> {% endif %}{{ e.description }}</span>
           <button class="li-del" aria-label="Remover" onclick="Food.remove(this, {{ e.id }})">×</button>
         </div>
         <span class="li-macros">{{ e.kcal | round | int }} kcal · P {{ e.protein_g | round | int }} · C {{ e.carbs_g | round | int }} · G {{ e.fat_g | round | int }}{% if e.time %} · {{ e.time }}{% endif %}</span>
@@ -190,7 +191,9 @@
       const div = document.createElement("div");
       div.className = "logitem";
       div.dataset.id = e.id;
-      const meal = e.meal ? `<b>${e.meal}:</b> ` : "";
+      // não duplica o prefixo quando a descrição já começa com a refeição
+      const meal = e.meal && !e.description.toLowerCase().startsWith(e.meal.toLowerCase())
+        ? `<b>${e.meal}:</b> ` : "";
       const em = (e.meal && MEAL_EM[e.meal.toLowerCase()]) || "🍽️";
       const now = new Date();
       const hora = now.getHours() + "h" + String(now.getMinutes()).padStart(2, "0");
@@ -242,8 +245,13 @@
     },
 
     async remove(btn, id) {
+      // confirmação: o × fica ao lado do texto e era fácil excluir sem querer
+      const item = btn.closest(".logitem");
+      let desc = item.querySelector(".li-main").textContent.trim();
+      if (desc.length > 60) desc = desc.slice(0, 59) + "…";
+      if (!confirm(`Remover "${desc}" do registro de hoje?`)) return;
       const r = await App.post("/api/food/delete", { id, date: TODAY });
-      btn.closest(".logitem").remove();
+      item.remove();
       App.updateMacros(r.consumed, r.targets);
       Food.count();
     },
