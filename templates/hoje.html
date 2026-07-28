@@ -130,8 +130,9 @@
 
   {% if configured %}
   <form class="quick-log" onsubmit="Food.quickLog(event)">
+    {# placeholder curto: o exemplo longo quebrava em 2+ linhas no textarea #}
     <textarea id="quick-text" rows="1" autocomplete="off"
-              placeholder="Comi outra coisa… ex.: 3 ovos e uma banana"
+              placeholder="Comi outra coisa…"
               oninput="Food.autogrow(this)"></textarea>
     <button class="btn btn-sm" type="submit" id="quick-btn">Registrar</button>
   </form>
