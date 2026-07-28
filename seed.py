@@ -54,6 +54,10 @@ EXERCISES = [
 ARROZ = ("Arroz branco cozido", 250, 1.0, 6, 70, 0.5, 320)
 LEGUMES = ("Legumes cozidos", 150, 1.0, 3, 10, 0.5, 57)
 
+# horário previsto de cada refeição ("HH:MM") — mostrado nas ações futuras da Hoje
+MEAL_TIMES = {"Café da manhã": "07:00", "Almoço": "12:00",
+              "Lanche": "16:00", "Jantar": "19:30"}
+
 MEALS = [
     ("Café da manhã", [
         ("Ovos mexidos + tapioca",
@@ -164,7 +168,11 @@ def run():
 
     if cur.execute("SELECT COUNT(*) FROM meal").fetchone()[0] == 0:
         for m_sort, (meal_name, options) in enumerate(MEALS):
-            cur.execute("INSERT INTO meal (name, sort) VALUES (?, ?)", (meal_name, m_sort))
+            # shopping=0 no Extra também em banco NOVO (o backfill do migrate só
+            # cobre bancos criados antes da coluna existir)
+            cur.execute("INSERT INTO meal (name, sort, time, shopping) VALUES (?, ?, ?, ?)",
+                        (meal_name, m_sort, MEAL_TIMES.get(meal_name),
+                         0 if meal_name.startswith("Extra") else 1))
             meal_id = cur.lastrowid
             for o_sort, (opt_name, desc, items) in enumerate(options):
                 cur.execute(

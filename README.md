@@ -24,7 +24,8 @@ docker compose up -d --build
 
 O SQLite fica no volume `./data` — faça backup desse diretório. O app também
 gera sozinho uma cópia diária em `data/backups/` (mantém as últimas 14). Acesse
-pelo celular via `http://IP-DO-SERVIDOR:8080`.
+pelo celular via `http://IP-DO-SERVIDOR:8080` — e use "Adicionar à tela inicial"
+no navegador: o app é um PWA e abre em tela cheia, como app nativo.
 
 > Sem autenticação: pensado para rede local. Se for expor para fora, coloque
 > atrás de um reverse proxy com autenticação (ex.: Authelia, basic auth no

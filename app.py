@@ -1,5 +1,6 @@
 import csv
 import io
+import json
 import os
 from datetime import date, timedelta
 
@@ -137,6 +138,7 @@ def hoje():
         "hoje.html", page="hoje", date_pt=fmt_date_pt(d), today=d.isoformat(),
         tasks=tasks, logged=logged, targets=tg, consumed=consumed,
         next_meals=actions.next_meals(conn, d.isoformat()),
+        extras=actions.extra_meals(conn),
         workout=workout, workout_hint=workout_hint, is_run_day=wd in RUN_DAYS,
         weight_today=weighed["weight_kg"] if weighed else None,
         TASK_EM=TASK_EMOJI, MEAL_EM=MEAL_EMOJI,
@@ -368,6 +370,35 @@ def chat():
         app.logger.exception("erro no coach")
         return jsonify(error=f"Falha ao falar com o coach: {exc}"), 502
     return jsonify(reply=reply)
+
+
+@app.post("/api/chat/stream")
+def chat_stream():
+    """Versão streaming do /api/chat (SSE): texto vai chegando enquanto o coach
+    escreve, com eventos de status entre as chamadas de ferramenta."""
+    if not coach.is_configured():
+        return jsonify(error="Coach não configurado: defina ANTHROPIC_API_KEY no servidor."), 503
+    msg = (request.get_json() or {}).get("message", "").strip()
+    if not msg:
+        return jsonify(error="Mensagem vazia."), 400
+
+    def gen():
+        # conexão própria: o generator continua vivo depois do teardown do request,
+        # quando a g.conn já foi fechada
+        conn = db.connect()
+        try:
+            for ev in coach.chat_stream(conn, msg):
+                yield f"event: {ev['type']}\ndata: {json.dumps(ev, ensure_ascii=False)}\n\n"
+        except Exception as exc:
+            app.logger.exception("erro no coach (stream)")
+            yield ("event: error\ndata: "
+                   + json.dumps({"text": f"Falha ao falar com o coach: {exc}"},
+                                ensure_ascii=False) + "\n\n")
+        finally:
+            conn.close()
+
+    return Response(gen(), mimetype="text/event-stream",
+                    headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
 
 
 @app.post("/api/chat/reset")

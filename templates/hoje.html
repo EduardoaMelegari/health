@@ -77,6 +77,7 @@
           <span class="act-s mono">{{ first.macros.kcal | round | int }} kcal · P {{ first.macros.protein_g | round | int }} g</span>
         </div>
         <button class="btn btn-sm" onclick="Food.logOption(this, {{ first.row.id }})">comi isso</button>
+        {% if m.time_label %}<span class="act-time">{{ m.time_label }}</span>{% endif %}
       </div>
       {% if m.options | length > 1 %}
       <details class="swap">
@@ -100,6 +101,30 @@
     {% if not pending and not next_meals %}
     <p class="empty">Tudo em dia ✓</p>
     {% endif %}
+
+    {# fome fora de hora: o "Extra" fica acessível sem depender do quick-log #}
+    {% for m in extras %}
+    <details class="act-card extra">
+      <summary><span class="act">
+        <span class="act-ic">🍎</span>
+        <span class="act-txt">
+          <span class="act-t">{{ m.row.name }}</span>
+          <span class="act-s">{{ m.options | length }} opções rápidas</span>
+        </span>
+      </span></summary>
+      <div class="opt-rows">
+        {% for opt in m.options %}
+        <div class="opt-row">
+          <div class="r-txt">
+            <span class="r-name">{{ opt.row.name }}</span>
+            <span class="r-mac">{{ opt.macros.kcal | round | int }} kcal · P {{ opt.macros.protein_g | round | int }} g</span>
+          </div>
+          <button class="btn-ghost action btn-sm" onclick="Food.logOption(this, {{ opt.row.id }})">comi isso</button>
+        </div>
+        {% endfor %}
+      </div>
+    </details>
+    {% endfor %}
   </div>
 
   <details class="done-panel" open>
@@ -121,7 +146,7 @@
           <span class="li-main">{% if e.meal %}<b>{{ e.meal }}:</b> {% endif %}{{ e.description }}</span>
           <button class="li-del" aria-label="Remover" onclick="Food.remove(this, {{ e.id }})">×</button>
         </div>
-        <span class="li-macros">{{ e.kcal | round | int }} kcal · P {{ e.protein_g | round | int }} · C {{ e.carbs_g | round | int }} · G {{ e.fat_g | round | int }}</span>
+        <span class="li-macros">{{ e.kcal | round | int }} kcal · P {{ e.protein_g | round | int }} · C {{ e.carbs_g | round | int }} · G {{ e.fat_g | round | int }}{% if e.time %} · {{ e.time }}{% endif %}</span>
       </div>
       {% endfor %}
     </div>
@@ -167,10 +192,12 @@
       div.dataset.id = e.id;
       const meal = e.meal ? `<b>${e.meal}:</b> ` : "";
       const em = (e.meal && MEAL_EM[e.meal.toLowerCase()]) || "🍽️";
+      const now = new Date();
+      const hora = now.getHours() + "h" + String(now.getMinutes()).padStart(2, "0");
       div.innerHTML = `<div class="li-top"><span class="em">${em}</span>`
         + `<span class="li-main">${meal}${e.description}</span>`
         + `<button class="li-del" aria-label="Remover">×</button></div>`
-        + `<span class="li-macros">${Math.round(e.kcal)} kcal · P ${Math.round(e.protein_g)} · C ${Math.round(e.carbs_g)} · G ${Math.round(e.fat_g)}</span>`;
+        + `<span class="li-macros">${Math.round(e.kcal)} kcal · P ${Math.round(e.protein_g)} · C ${Math.round(e.carbs_g)} · G ${Math.round(e.fat_g)} · ${hora}</span>`;
       div.querySelector(".li-del").onclick = () => Food.remove(div.querySelector(".li-del"), e.id);
       document.getElementById("done-list").appendChild(div);
       Food.count();
@@ -182,10 +209,14 @@
         const r = await App.post("/api/food/log-option", { option_id: optionId, date: TODAY });
         Food.render(r.entry);
         App.updateMacros(r.consumed, r.targets);
-        // a refeição registrada sai do fluxo e a próxima assume o destaque
-        btn.closest(".act-card").remove();
-        const next = document.querySelector(".act-card.future");
-        if (next) next.classList.remove("future");
+        // a refeição registrada sai do fluxo e a próxima assume o destaque;
+        // o card Extra fica — dá pra repetir ao longo do dia
+        const card = btn.closest(".act-card");
+        if (card && !card.classList.contains("extra")) {
+          card.remove();
+          const next = document.querySelector(".act-card.future");
+          if (next) next.classList.remove("future");
+        }
       } finally { btn.disabled = false; }
     },
 

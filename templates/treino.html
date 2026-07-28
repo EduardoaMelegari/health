@@ -25,7 +25,9 @@
   </ul>
   <div class="banner-foot">
     <button class="btn btn-sm" onclick="applyRebalance(this)">Aplicar mudanças</button>
-    <a class="btn-ghost warn btn-sm" href="/coach">Perguntar ao coach</a>
+    <a class="btn-ghost warn btn-sm"
+       href="/coach?q={{ ('O app sugeriu este rebalanceamento dos treinos — o que acha? '
+                          ~ rebalance | map(attribute='what') | join('; ')) | urlencode }}">Perguntar ao coach</a>
   </div>
 </div>
 {% endif %}

@@ -85,6 +85,8 @@ chame list_plan para pegar os IDs corretos.
 confirme numa frase o que lançou. Para corrigir, use remove_food_log com o id do get_progress.
 - Quando ele disser que fez algo da rotina (treino, corrida, pesagem, marmitas...), \
 marque no checklist com set_task_done (ids via list_tasks).
+- Quando ele disser as cargas que fez num exercício ("agachamento 4x8 com 60 kg"), \
+registre com log_sets (exercise_id via list_plan) e marque o treino no checklist.
 - Você PODE editar direto a biblioteca (cardápio), o treino e as metas com as \
 ferramentas de edição. Sempre que editar, diga em uma frase clara o que mudou. O \
 Eduardo pode conferir e reverter nas páginas Dieta/Treino.
@@ -139,6 +141,19 @@ TOOLS = [
          "done": {"type": "boolean"},
          "date": {"type": "string", "description": "Data YYYY-MM-DD (padrão: hoje)"}},
          "required": ["template_id", "done"]}},
+    {"name": "log_sets",
+     "description": "Registra as séries de um exercício num dia (SUBSTITUI as séries já "
+                    "registradas do exercício nesse dia). exercise_id via list_plan. Em "
+                    "exercícios kind='time', envie os segundos em 'reps' e omita weight_kg.",
+     "input_schema": {"type": "object", "properties": {
+         "exercise_id": {"type": "integer"},
+         "date": {"type": "string", "description": "Data YYYY-MM-DD (padrão: hoje)"},
+         "sets": {"type": "array", "description": "Uma entrada por série, na ordem",
+                  "items": {"type": "object", "properties": {
+                      "weight_kg": {"type": "number"},
+                      "reps": {"type": "integer"}},
+                      "required": ["reps"]}}},
+         "required": ["exercise_id", "sets"]}},
     {"name": "add_meal_option",
      "description": "Cria uma nova opção prática para uma refeição (ex.: nova opção de jantar). "
                     "Depois adicione os itens com add_meal_item.",
@@ -242,6 +257,14 @@ def _dispatch(conn, name, args):
             d = args.get("date") or date.today().isoformat()
             actions.set_task_done(conn, args["template_id"], d, args["done"])
             return f"Tarefa {'concluída' if args['done'] else 'desmarcada'} em {d}.", False
+        if name == "log_sets":
+            d = args.get("date") or date.today().isoformat()
+            ex = conn.execute("SELECT name FROM exercise WHERE id = ?",
+                              (args["exercise_id"],)).fetchone()
+            if ex is None:
+                return f"Exercício {args['exercise_id']} não existe (veja list_plan).", True
+            actions.save_sets(conn, args["exercise_id"], d, args["sets"])
+            return f"Séries de {ex['name']} registradas em {d} ({len(args['sets'])} séries).", False
         if name == "add_meal_option":
             oid = actions.add_meal_option(conn, args["meal_id"], args["name"], args.get("description", ""))
             return f"Opção criada (option_id={oid}). Adicione os itens com add_meal_item.", False
@@ -509,8 +532,33 @@ def quick_log(conn, text, d=None):
     return entries
 
 
-def chat(conn, user_text):
-    """Processa uma mensagem do usuário e devolve o texto de resposta do coach."""
+# rótulo amigável exibido na UI enquanto o coach usa cada ferramenta
+_TOOL_LABELS = {
+    "get_progress": "consultando seu progresso…",
+    "list_plan": "lendo o plano…",
+    "log_weight": "registrando a pesagem…",
+    "log_food": "lançando no diário…",
+    "remove_food_log": "corrigindo o diário…",
+    "list_tasks": "olhando o checklist…",
+    "set_task_done": "atualizando o checklist…",
+    "log_sets": "registrando as séries…",
+    "add_meal_option": "editando o cardápio…",
+    "update_meal_option": "editando o cardápio…",
+    "add_meal_item": "editando o cardápio…",
+    "update_meal_item": "editando o cardápio…",
+    "add_exercise": "editando o treino…",
+    "update_exercise": "editando o treino…",
+    "update_targets": "ajustando as metas…",
+}
+
+
+def chat_stream(conn, user_text):
+    """Processa uma mensagem e vai emitindo eventos para a UI (SSE):
+    - {"type": "delta",    "text": ...}  pedaço do texto sendo escrito
+    - {"type": "turn_end", "text": ...}  texto final de uma iteração (vira uma bolha)
+    - {"type": "status",   "text": ...}  o que o coach está fazendo entre iterações
+    - {"type": "done"}                   fim do loop
+    A persistência é idêntica à do chat() de antes: salva ao fim de cada iteração."""
     if not is_configured():
         raise RuntimeError("Coach não configurado (defina ANTHROPIC_API_KEY).")
 
@@ -535,31 +583,43 @@ def chat(conn, user_text):
                                "literalmente):\n" + summary})
 
     messages = _api_history(conn, today)
-    final_text = ""
 
     for _ in range(MAX_TOOL_ITERATIONS):
-        resp = _client.messages.create(
-            model=MODEL, max_tokens=MAX_TOKENS,
-            thinking={"type": "adaptive"},
-            output_config={"effort": COACH_EFFORT},
-            system=system, tools=TOOLS, messages=messages)
+        with _client.messages.stream(
+                model=MODEL, max_tokens=MAX_TOKENS,
+                thinking={"type": "adaptive"},
+                output_config={"effort": COACH_EFFORT},
+                system=system, tools=TOOLS, messages=messages) as stream:
+            for chunk in stream.text_stream:  # só texto — thinking fica de fora
+                yield {"type": "delta", "text": chunk}
+            resp = stream.get_final_message()
 
         messages.append({"role": "assistant", "content": resp.content})
         text = "".join(b.text for b in resp.content if b.type == "text").strip()
         _save(conn, "assistant", _persistable(resp.content), text or None)
-        if text:
-            final_text = text
+        yield {"type": "turn_end", "text": text}
 
         if resp.stop_reason != "tool_use":
             break
 
+        tool_uses = [b for b in resp.content if b.type == "tool_use"]
+        yield {"type": "status",
+               "text": _TOOL_LABELS.get(tool_uses[0].name, "trabalhando…")}
         results = []
-        for b in resp.content:
-            if b.type == "tool_use":
-                out, is_err = _dispatch(conn, b.name, b.input or {})
-                results.append({"type": "tool_result", "tool_use_id": b.id,
-                                "content": out, "is_error": is_err})
+        for b in tool_uses:
+            out, is_err = _dispatch(conn, b.name, b.input or {})
+            results.append({"type": "tool_result", "tool_use_id": b.id,
+                            "content": out, "is_error": is_err})
         messages.append({"role": "user", "content": results})
         _save(conn, "user", results, None)
 
+    yield {"type": "done"}
+
+
+def chat(conn, user_text):
+    """Versão não-streaming (mesma lógica): devolve só o texto da última iteração."""
+    final_text = ""
+    for ev in chat_stream(conn, user_text):
+        if ev["type"] == "turn_end" and ev["text"]:
+            final_text = ev["text"]
     return final_text or "(sem resposta)"

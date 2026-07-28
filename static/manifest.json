@@ -1,0 +1,13 @@
+{
+  "name": "Saúde",
+  "short_name": "Saúde",
+  "description": "Plano de perda de gordura: dieta, peso, treino e coach",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#f0f3f7",
+  "theme_color": "#2563eb",
+  "icons": [
+    { "src": "/static/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" },
+    { "src": "/static/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any maskable" }
+  ]
+}

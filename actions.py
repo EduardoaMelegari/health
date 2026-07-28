@@ -46,11 +46,14 @@ def macros_for_date(conn, d):
 
 def food_log_for_date(conn, d):
     rows = conn.execute(
-        "SELECT id, meal, description, protein_g, carbs_g, fat_g, kcal"
+        "SELECT id, meal, description, protein_g, carbs_g, fat_g, kcal, created_at"
         " FROM food_log WHERE date = ? ORDER BY id", (d,)).fetchall()
     return [{"id": r["id"], "meal": r["meal"], "description": r["description"],
              "protein_g": r["protein_g"], "carbs_g": r["carbs_g"],
-             "fat_g": r["fat_g"], "kcal": r["kcal"]} for r in rows]
+             "fat_g": r["fat_g"], "kcal": r["kcal"],
+             # "12h40" — só quando o lançamento é do mesmo dia do registro
+             "time": r["created_at"][11:16].replace(":", "h")
+                     if r["created_at"][:10] == d else None} for r in rows]
 
 
 def meal_library(conn):
@@ -69,10 +72,18 @@ def meal_library(conn):
     return cards
 
 
+def _time_label(t):
+    """'19:30' → '19h30' · '07:00' → '7h' · None → None."""
+    if not t:
+        return None
+    h, m = t.split(":")
+    return f"{int(h)}h{m if m != '00' else ''}"
+
+
 def next_meals(conn, d):
     """Refeições fixas do dia (shopping=1 — "Extra" fica de fora) que ainda não
     têm nada no food_log, na ordem do plano. A primeira é a "próxima ação" da
-    Hoje; as demais aparecem esmaecidas."""
+    Hoje; as demais aparecem esmaecidas com o horário previsto."""
     logged = {r["meal"] for r in conn.execute(
         "SELECT DISTINCT meal FROM food_log WHERE date = ? AND meal IS NOT NULL", (d,))}
     pending = []
@@ -84,8 +95,24 @@ def next_meals(conn, d):
                        "SELECT * FROM meal_option WHERE meal_id = ? AND active = 1"
                        " ORDER BY sort, id", (m["id"],))]
         if options:
-            pending.append({"row": m, "options": options})
+            pending.append({"row": m, "options": options,
+                            "time_label": _time_label(m["time"])})
     return pending
+
+
+def extra_meals(conn):
+    """Refeições fora do plano fixo (shopping=0 — o "Extra (se der fome)"): na
+    Hoje viram um card discreto no fim das próximas ações, para o "comi isso"
+    continuar acessível sem depender do registro por texto (que exige API key)."""
+    extras = []
+    for m in conn.execute("SELECT * FROM meal WHERE shopping = 0 ORDER BY sort"):
+        options = [{"row": o, "macros": option_macros(conn, o["id"])}
+                   for o in conn.execute(
+                       "SELECT * FROM meal_option WHERE meal_id = ? AND active = 1"
+                       " ORDER BY sort, id", (m["id"],))]
+        if options:
+            extras.append({"row": m, "options": options})
+    return extras
 
 
 def workout_cards(conn, workout, d):
@@ -182,20 +209,26 @@ def toggle_task(conn, template_id, d):
 
 
 def adherence(conn, days):
-    d = date.today()
+    """% de tarefas concluídas nos últimos `days` dias COMPLETOS (termina ontem).
+    O dia corrente fica de fora: às 8h as tarefas de hoje ainda não feitas não
+    são "perdidas" — incluí-las fazia a pill amanhecer âmbar e "melhorar" sozinha
+    ao longo do dia. Duas queries no total, independente da janela."""
+    end = date.today() - timedelta(days=1)
+    start = end - timedelta(days=days - 1)
+    templates = [(t["id"], set(t["weekdays"].split(","))) for t in conn.execute(
+        "SELECT id, weekdays FROM task_template WHERE active = 1")]
+    done_by_day = {}
+    for r in conn.execute(
+            "SELECT date, template_id FROM task_done WHERE date BETWEEN ? AND ?",
+            (start.isoformat(), end.isoformat())):
+        done_by_day.setdefault(r["date"], set()).add(r["template_id"])
     total = done = 0
     for i in range(days):
-        di = d - timedelta(days=i)
-        wdi = str(di.weekday())
-        ids = [t["id"] for t in conn.execute(
-            "SELECT id, weekdays FROM task_template WHERE active = 1")
-            if wdi in t["weekdays"].split(",")]
+        di = start + timedelta(days=i)
+        wd = str(di.weekday())
+        ids = {tid for tid, wds in templates if wd in wds}
         total += len(ids)
-        if ids:
-            marks = ",".join("?" * len(ids))
-            done += conn.execute(
-                f"SELECT COUNT(*) FROM task_done WHERE date = ? AND template_id IN ({marks})",
-                [di.isoformat()] + ids).fetchone()[0]
+        done += len(done_by_day.get(di.isoformat(), set()) & ids)
     return round(100 * done / total) if total else None
 
 

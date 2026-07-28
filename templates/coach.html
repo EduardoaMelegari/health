@@ -258,6 +258,8 @@ const Coach = {
     if (first) item.querySelector(".d-preview").textContent = first.textContent;
   },
 
+  // streaming (SSE via fetch): o texto chega enquanto o coach escreve, com uma
+  // linha de status ("consultando seu progresso…") entre as chamadas de ferramenta
   async send(e) {
     if (e && e.preventDefault) e.preventDefault();
     const input = document.getElementById("msg");
@@ -274,23 +276,68 @@ const Coach = {
 
     const send = document.getElementById("send");
     send.disabled = true;
-    const typing = Coach.addBubble("assistant typing", "digitando…");
+    let typing = Coach.addBubble("assistant typing", "digitando…");
+    let bubble = null, buf = "";
+
+    const clearTyping = () => { if (typing) { typing.remove(); typing = null; } };
+    const onEvent = (ev, data) => {
+      if (ev === "delta") {
+        clearTyping();
+        if (!bubble) { bubble = Coach.addBubble("assistant", ""); bubble.style.whiteSpace = "pre-wrap"; }
+        buf += data.text || "";
+        bubble.textContent = buf;
+        bubble.scrollIntoView({ block: "end" });
+      } else if (ev === "turn_end") {
+        // fecha a bolha da iteração com o markdown renderizado
+        if (!bubble && data.text) bubble = Coach.addBubble("assistant", "");
+        if (bubble) {
+          bubble.style.whiteSpace = "";
+          bubble.innerHTML = Coach.md(data.text || buf);
+          bubble = null; buf = "";
+        }
+      } else if (ev === "status") {
+        clearTyping();
+        typing = Coach.addBubble("assistant typing", data.text || "…");
+      } else if (ev === "error") {
+        clearTyping();
+        Coach.addBubble("assistant error", data.text || "Erro inesperado.");
+      }
+    };
 
     try {
-      const res = await fetch("/api/chat", {
+      const res = await fetch("/api/chat/stream", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ message: text }),
       });
-      const data = await res.json();
-      typing.remove();
-      if (!res.ok) {
+      if (!res.ok || !res.body) {
+        const data = await res.json().catch(() => ({}));
+        clearTyping();
         Coach.addBubble("assistant error", data.error || "Erro inesperado.");
-      } else {
-        Coach.addBubble("assistant", data.reply);
+        return;
       }
+      const reader = res.body.getReader();
+      const dec = new TextDecoder();
+      let acc = "";
+      for (;;) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        acc += dec.decode(value, { stream: true });
+        let idx;
+        while ((idx = acc.indexOf("\n\n")) >= 0) {
+          const raw = acc.slice(0, idx);
+          acc = acc.slice(idx + 2);
+          let ev = "message", data = {};
+          for (const line of raw.split("\n")) {
+            if (line.startsWith("event: ")) ev = line.slice(7);
+            else if (line.startsWith("data: ")) { try { data = JSON.parse(line.slice(6)); } catch {} }
+          }
+          onEvent(ev, data);
+        }
+      }
+      clearTyping();
     } catch {
-      typing.remove();
+      clearTyping();
       Coach.addBubble("assistant error", "Sem conexão com o servidor.");
     } finally {
       Coach.refreshDayItem(Coach.todayLocal());
@@ -317,6 +364,15 @@ addEventListener("keydown", (e) => { if (e.key === "Escape") Coach.closeDays(); 
 Coach.showToday();
 const _hoje = Coach.pane(Coach.todayLocal());
 if (_hoje && _hoje.lastElementChild) _hoje.lastElementChild.scrollIntoView({ block: "end" });
+
+// /coach?q=… chega com o composer preenchido (atalhos como o banner do treino)
+const _q = new URLSearchParams(location.search).get("q");
+if (_q) {
+  const m = document.getElementById("msg");
+  m.value = _q;
+  Coach.autogrow(m);
+  m.focus();
+}
 </script>
 {% endif %}
 {% endblock %}

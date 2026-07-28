@@ -154,8 +154,15 @@ if (canvas) initChart();
 
 async function initChart() {
   const data = await (await fetch("/api/weight/data")).json();
-  const css = getComputedStyle(document.documentElement);
-  const tok = (n) => css.getPropertyValue(n).trim();
+  // os tokens usam light-dark(): a custom property crua não é uma cor parseável
+  // pelo Chart.js — resolve o valor final aplicando num elemento sonda
+  const probe = document.createElement("span");
+  probe.style.display = "none";
+  document.body.appendChild(probe);
+  const tok = (n) => {
+    probe.style.color = `var(${n})`;
+    return getComputedStyle(probe).color;
+  };
   // azul = peso, verde = média móvel — lidos dos tokens do tema atual
   const seriesPeso = tok("--brand");
   const seriesMedia = tok("--action");

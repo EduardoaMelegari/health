@@ -85,51 +85,50 @@ Implementação do handoff `design_handoff_health_redesign/` (direções 2a, 1d,
 
 ## Não feito (consciente)
 
-- **Horário nas ações futuras** — o mockup mostra "19h" nas refeições mais tarde
-  no dia; não existe horário de refeição no banco, então o card futuro fica só
-  esmaecido, sem inventar dado. (→ backlog B5)
-- **Streaming da resposta do coach** — a conversa só aparece quando o loop
-  inteiro termina (30 s+ em análises longas). Vale fazer via SSE, mas é uma
-  mudança maior (backend + frontend) e precisa de teste com a chave da API.
-  (→ backlog B4)
 - **Testes automatizados** — o projeto decide não ter suíte (ver CLAUDE.md);
   a validação continua sendo rodar o app e exercitar as páginas.
 - **Autenticação** — segue fora do escopo (rede local / reverse proxy).
 
 ---
 
-# Backlog proposto — análise de 27/07/2026
+# Backlog executado — 27/07/2026
 
 Revisão pós-redesign: pendências antigas + lacunas que a análise do código
-encontrou. Nada abaixo está implementado; ordem = prioridade sugerida.
+encontrou. **Tudo abaixo está implementado.**
 
-## Lacunas funcionais (corrigir primeiro)
+## Lacunas funcionais
 
-| # | Problema | Proposta | Esforço |
-|---|----------|----------|---------|
-| B1 | **"Extra (se der fome)" sumiu da Hoje.** `next_meals` filtra `shopping = 1` e o Extra é `shopping = 0` — antes do redesign toda a biblioteca (incl. Extra) tinha "comi isso" na Hoje; agora o Extra só é registrável pelo quick-log, que exige a chave da API | Card "Extra" discreto no fim das próximas ações (colapsado, sem destaque), reusando as linhas do "trocar ▾" | pequeno |
-| B2 | **O coach não registra séries de treino.** Há tool p/ peso, comida, checklist e p/ *editar* exercícios, mas nenhuma chama `actions.save_sets` — "fiz agachamento 4×8 com 60 kg" não tem como ser lançado pela conversa | Tool `log_sets(exercise_id, date, sets[])` no `coach.py` mapeando pra `actions.save_sets` (a lógica já existe; é só expor) | pequeno |
-| B3 | **Aderência 7d pune a manhã.** `adherence(7)` conta o dia corrente: às 8h, as tarefas de hoje ainda não feitas contam como perdidas — a pill amanhece âmbar e "melhora" ao longo do dia sem nada ter mudado | Janela = últimos 7 dias *completos* (ontem para trás); hoje só entra no que já foi feito, ou fica de fora | pequeno |
+| # | Problema | Como ficou |
+|---|----------|------------|
+| B1 | **"Extra (se der fome)" tinha sumido da Hoje** — `next_meals` filtra `shopping = 1` e o Extra é `shopping = 0`; só dava pra registrar pelo quick-log, que exige a chave da API | Card tracejado colapsado no fim das próximas ações (`actions.extra_meals`), com "comi isso" por opção; o card não some ao registrar — dá pra repetir no dia. De quebra: o seed agora grava `shopping = 0` no Extra também em banco NOVO (o backfill do migrate só cobria bancos antigos) |
+| B2 | **O coach não registrava séries de treino** — nenhuma tool chamava `actions.save_sets` | Tool `log_sets(exercise_id, date?, sets[])` com validação do exercício; instrução no system prompt ("agachamento 4×8 com 60 kg" → registra e marca o checklist) |
+| B3 | **Aderência 7d punia a manhã** — a janela incluía o dia corrente, então as tarefas ainda não feitas contavam como perdidas às 8h | Janela = últimos 7 dias **completos** (termina ontem); junto veio o B10 |
 
-## Pendências antigas (agora com proposta concreta)
+## Pendências antigas
 
-| # | Melhoria | Proposta | Esforço |
-|---|----------|----------|---------|
-| B4 | **Streaming do coach (SSE)** | Rota `GET /api/chat/stream` com generator Flask: repassa os deltas de texto do `client.messages.stream` e emite eventos de status entre iterações do loop ("consultando progresso…", "editando cardápio…") — o gthread do gunicorn atende; o front troca o fetch por `EventSource`/reader. Persistência continua igual (salva no fim de cada iteração) | médio |
-| B5 | **Horário nas refeições** | Coluna `meal.time` (TEXT "HH:MM", nullable) via `db.migrate()` + seed com horários do plano (07:00 / 12:00 / 16:00 / 19:30); o card futuro da Hoje mostra o horário no lugar do botão (como no mockup 2a) e `next_meals` pode ordenar por proximidade da hora atual | pequeno |
+| # | Melhoria | Como ficou |
+|---|----------|------------|
+| B4 | **Streaming do coach (SSE)** | `POST /api/chat/stream`: generator Flask com conexão própria repassa os deltas do `client.messages.stream` e emite `status` entre as iterações ("consultando seu progresso…", "editando o cardápio…" — mapa `_TOOL_LABELS`). O front lê via `fetch` + reader, cria uma bolha por iteração (texto cru durante o stream, markdown no `turn_end`). Persistência idêntica à de antes; `/api/chat` continua existindo como wrapper não-streaming do mesmo generator |
+| B5 | **Horário nas refeições** | Coluna `meal.time` ("HH:MM") em `db.migrate()` com backfill pelos nomes do plano (07:00/12:00/16:00/19:30) + seed; o card futuro da Hoje mostra "12h"/"19h30" no lugar do botão (mockup 2a) |
 
 ## Valor alto, esforço baixo
 
-| # | Melhoria | Proposta | Esforço |
-|---|----------|----------|---------|
-| B6 | **PWA instalável** | `manifest.json` (nome, ícone, `display: standalone`, tema) + `apple-touch-icon` — o app é de uso diário no celular e hoje roda com o chrome do navegador em volta | pequeno |
-| B7 | **"Perguntar ao coach" com contexto** | O botão do banner ABC (e outros atalhos) vira `/coach?q=texto` e o composer chega preenchido — hoje o link abre o chat vazio e o usuário redigita a pergunta | pequeno |
-| B8 | **Hora nos itens do "feito hoje"** | `food_log.created_at` já existe; mostrar "· 12h40" no mono da linha 2 ajuda a auditar o dia sem custo de schema | pequeno |
+| # | Melhoria | Como ficou |
+|---|----------|------------|
+| B6 | **PWA instalável** | `static/manifest.json` (standalone, tema) + `icon.svg`/`icon-512.png`/`icon-180.png` (halter branco em fundo azul, no estilo do ícone da nav) + `apple-touch-icon` e `theme-color` claro/escuro no `base.html`. O favicon emoji deu lugar ao SVG |
+| B7 | **"Perguntar ao coach" com contexto** | `/coach?q=…` preenche o composer (sem enviar); o banner ABC do treino manda a pergunta já com as três mudanças propostas |
+| B8 | **Hora nos itens do "feito hoje"** | `food_log_for_date` devolve "12h40" do `created_at` (só quando o lançamento é do mesmo dia); a linha mono ganha "· 12h40", inclusive nos itens adicionados sem reload |
 
-## Dívida técnica (sem pressa)
+## Dívida técnica
 
-| # | Item | Proposta |
-|---|------|----------|
-| B9 | **Paleta escura duplicada no CSS** (media query × `data-theme`, aviso no topo do arquivo) | Migrar os tokens para `light-dark()` com `color-scheme` — cada cor definida uma vez; suporte de browser é tranquilo em 2026 |
-| B10 | **`adherence()` faz 2 queries por dia da janela** (30 d no snapshot do coach = ~60 queries por mensagem) | Reescrever em 1–2 SQLs agregados; invisível ao usuário, mas barato de fazer junto com B3 |
-| B11 | **Healthcheck no compose** | `healthcheck` batendo em `/export` (rota barata) + `start_period`, pro `restart: unless-stopped` ter sinal de vida real |
+| # | Item | Como ficou |
+|---|------|------------|
+| B9 | **Paleta escura duplicada no CSS** | Tokens migrados para `light-dark(claro, escuro)` com `color-scheme: light dark` no `:root` — cada cor definida UMA vez; o botão de tema vira só `data-theme` trocando o `color-scheme`. Pegadinha documentada: JS que precisa da cor resolvida (gráfico do Peso) não pode ler a custom property crua — o `tok()` do `peso.html` agora resolve via elemento sonda. Piso de browser: Chrome 123+/Safari 17.5+/Firefox 120+ (2024) |
+| B10 | **`adherence()` fazia 2 queries por dia da janela** | Reescrita com 2 queries no total (templates + `task_done` no intervalo), janela de qualquer tamanho |
+| B11 | **Healthcheck no compose** | `healthcheck` batendo em `/export` (5 COUNTs — passa por Flask + SQLite) com `start_period: 20s` |
+
+Validação: sem chave da API, o fluxo SSE foi testado de ponta a ponta com um
+cliente fake (deltas → `turn_end` → `done` chegam corretos e persistem); o resto
+foi exercitado nas páginas com screenshots nos dois temas. **Falta validar o
+streaming com a chave real no servidor** — se algo falhar lá, o `/api/chat`
+antigo segue funcionando como fallback trocando 1 linha no `coach.html`.

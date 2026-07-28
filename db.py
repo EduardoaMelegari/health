@@ -61,7 +61,8 @@ CREATE TABLE IF NOT EXISTS meal (
     id       INTEGER PRIMARY KEY,
     name     TEXT NOT NULL,
     sort     INTEGER DEFAULT 0,
-    shopping INTEGER NOT NULL DEFAULT 1  -- entra na lista de compras semanal (0 p/ "Extra")
+    shopping INTEGER NOT NULL DEFAULT 1,  -- entra na lista de compras semanal (0 p/ "Extra")
+    time     TEXT                         -- horário previsto "HH:MM" (opcional)
 );
 
 CREATE TABLE IF NOT EXISTS meal_option (
@@ -135,6 +136,13 @@ def migrate(conn):
     if not _column_exists(conn, "meal", "shopping"):
         conn.execute("ALTER TABLE meal ADD COLUMN shopping INTEGER NOT NULL DEFAULT 1")
         conn.execute("UPDATE meal SET shopping = 0 WHERE name LIKE 'Extra%'")
+    if not _column_exists(conn, "meal", "time"):
+        # horário previsto da refeição ("HH:MM") — aparece nas ações futuras da Hoje;
+        # backfill pelos nomes do plano original (refeições novas ficam sem horário)
+        conn.execute("ALTER TABLE meal ADD COLUMN time TEXT")
+        for like, t in [("Café%", "07:00"), ("Almoço%", "12:00"),
+                        ("Lanche%", "16:00"), ("Jantar%", "19:30")]:
+            conn.execute("UPDATE meal SET time = ? WHERE name LIKE ?", (t, like))
     # tabela de um design anterior ao food_log; nunca foi usada pelo código
     conn.execute("DROP TABLE IF EXISTS meal_choice")
     conn.commit()
