@@ -64,8 +64,30 @@ thread — dias anteriores ficam somente leitura, com "Voltar pra hoje". Se ela
 não aparece no seu uso, é porque **o servidor ainda roda a imagem antiga**:
 `git pull && docker compose up -d --build` resolve.
 
+---
+
+# Redesign mobile — 27/07/2026
+
+Implementação do handoff `design_handoff_health_redesign/` (direções 2a, 1d, 3a,
+3b, 3c). Nada novo no banco; a camada de dados ganhou só funções de leitura.
+
+| # | Tela | O que mudou |
+|---|------|-------------|
+| 22 | **Coach + Hoje** | **Enter quebra linha**; o envio é só pelo botão, com o hint "Enter quebra linha · enviar pelo botão" sob o composer. Era a irritação diária nº 1 |
+| 23 | **Hoje** | Virou "fluxo do dia": donut de kcal restantes + linha mono de macros + pill de aderência no topo; "⏭️ próximas ações" (treino do dia com a sugestão de carga, próxima refeição não registrada com "comi isso" e "trocar ▾", tarefas pendentes com checkbox); acordeão "✅ feito hoje". A biblioteca de refeições saiu da Hoje — vive na Dieta |
+| 24 | **Hoje** | O item do diário agora tem 2 linhas (descrição com ellipsis / macros em mono) — corrige a quebra de linha feia do "Registrado hoje" |
+| 25 | **Peso** | Hero "🎯 META": média móvel grande, pill de ritmo (verde ≤ −0,4 kg/sem, senão âmbar), barra start→meta com traços nos marcos e frase de ETA. Tiles HOJE / IMC / PERDIDO |
+| 26 | **Treino** | Abas A/B/C em underline (a do dia com "· hoje"); exercícios colapsados em `<details>` — abre sozinho o primeiro ainda sem séries; sugestão virou pill "↑ 62,5 kg" e a última sessão virou 1 linha mono |
+| 27 | **Treino** | Banner "⚠️ balanceamento ABC" (rosca direta ⇢ elevação lateral, + face pull, + prancha no C). One-shot: `actions.rebalance_plan()` devolve só o que falta e o banner some sozinho depois do "Aplicar mudanças", que usa as APIs de exercício já existentes |
+| 28 | **Dieta** | Sumiu a tabela de 8 colunas: refeições e opções colapsáveis, só as gramas editáveis inline (e os macros **escalam junto** — `actions.set_item_grams`), macros/fator cru atrás de "editar item". Lista de compras virou chips mono |
+| 29 | **actions.py** | `next_meals`, `workout_cards` (movida da rota `/treino`, agora também alimenta a Hoje), `rebalance_plan`, `set_item_grams`; `weight_stats` ganhou meta final, `weeks_to_goal`, perdido e progresso/marcos da barra |
+| 30 | **CSS** | Tokens novos (`--sunk`, `--border-strong`, `--brand-soft`, `--ok-*`, `--warn-*`, `--radius-ctl`) mapeados nos dois temas. ⚠️ a paleta escura está duplicada (tema do sistema × tema forçado) — alterou uma, altere a outra |
+
 ## Não feito (consciente)
 
+- **Horário nas ações futuras** — o mockup mostra "19h" nas refeições mais tarde
+  no dia; não existe horário de refeição no banco, então o card futuro fica só
+  esmaecido, sem inventar dado.
 - **Streaming da resposta do coach** — a conversa só aparece quando o loop
   inteiro termina (30 s+ em análises longas). Vale fazer via SSE, mas é uma
   mudança maior (backend + frontend) e precisa de teste com a chave da API.

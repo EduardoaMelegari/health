@@ -1,6 +1,6 @@
 import csv
 import io
-from datetime import date
+from datetime import date, timedelta
 
 from flask import Flask, g, jsonify, render_template, request, Response
 
@@ -16,6 +16,9 @@ MONTHS_PT = ["janeiro", "fevereiro", "março", "abril", "maio", "junho", "julho"
              "agosto", "setembro", "outubro", "novembro", "dezembro"]
 WORKOUT_BY_WEEKDAY = {0: "A", 2: "B", 4: "C"}
 RUN_DAYS = {1, 3}
+# ícones dos cards de ação da Hoje (categoria da tarefa / nome da refeição do seed)
+TASK_EMOJI = {"revisao": "⚖️", "treino": "🏋️", "dieta": "🍽️", "preparo": "🛒"}
+MEAL_EMOJI = {"café da manhã": "🍳", "almoço": "🍗", "lanche": "🍌", "jantar": "🍽️"}
 
 
 def get_conn():
@@ -69,6 +72,20 @@ def fmt_date_pt(d):
     return f"{WEEKDAYS_PT[d.weekday()].capitalize()}, {d.day} de {MONTHS_PT[d.month - 1]}"
 
 
+def fmt_num(v):
+    """Número curto em pt-BR: 62.5 → "62,5", 60.0 → "60"."""
+    return f"{v:g}".replace(".", ",")
+
+
+def fmt_int_br(v):
+    """Inteiro com separador de milhar pt-BR: 1240 → "1.240"."""
+    return f"{round(v):,}".replace(",", ".")
+
+
+app.jinja_env.filters["num"] = fmt_num
+app.jinja_env.filters["int_br"] = fmt_int_br
+
+
 # ---------------------------------------------------------------- páginas
 
 @app.route("/")
@@ -79,11 +96,25 @@ def hoje():
     wd = d.weekday()
 
     tasks = actions.tasks_for_date(conn, d)
-    meal_cards = actions.meal_library(conn)
     logged = actions.food_log_for_date(conn, d.isoformat())
     tg = targets_for(d, cfg)
     consumed = macros_for_date(conn, d)
     adherence = actions.adherence(conn, 7)
+
+    # próxima ação de treino: reusa a sugestão de carga da página de treino
+    workout = WORKOUT_BY_WEEKDAY.get(wd)
+    workout_hint = None
+    if workout:
+        cards = actions.workout_cards(conn, workout, d.isoformat())
+        top = next((c for c in cards if c["suggestion"]), None)
+        if top:
+            unit = "s" if top["row"]["kind"] == "time" else "kg"
+            workout_hint = f"{top['row']['name']} sugere {fmt_num(top['suggestion'])} {unit}"
+        elif cards:
+            workout_hint = f"{len(cards)} exercícios · registre as cargas"
+
+    weighed = conn.execute(
+        "SELECT weight_kg FROM weight_log WHERE date = ?", (d.isoformat(),)).fetchone()
 
     start = parse_date(cfg.get("start_date", d.isoformat()))
     review_days = int(cfg.get("review_days", 28))
@@ -92,8 +123,11 @@ def hoje():
 
     return render_template(
         "hoje.html", page="hoje", date_pt=fmt_date_pt(d), today=d.isoformat(),
-        tasks=tasks, meal_cards=meal_cards, logged=logged, targets=tg, consumed=consumed,
-        workout=WORKOUT_BY_WEEKDAY.get(wd), is_run_day=wd in RUN_DAYS,
+        tasks=tasks, logged=logged, targets=tg, consumed=consumed,
+        next_meals=actions.next_meals(conn, d.isoformat()),
+        workout=workout, workout_hint=workout_hint, is_run_day=wd in RUN_DAYS,
+        weight_today=weighed["weight_kg"] if weighed else None,
+        TASK_EM=TASK_EMOJI, MEAL_EM=MEAL_EMOJI,
         adherence=adherence, next_review=next_review, configured=coach.is_configured())
 
 
@@ -102,44 +136,26 @@ def peso():
     conn = get_conn()
     rows = conn.execute("SELECT * FROM weight_log ORDER BY date").fetchall()
     stats = actions.weight_stats(conn, get_config())
+    # "meta final em ~16 semanas (novembro)" — mês por extenso do ETA
+    goal_month = None
+    if stats["weeks_to_goal"]:
+        eta = date.today() + timedelta(weeks=stats["weeks_to_goal"])
+        goal_month = MONTHS_PT[eta.month - 1]
     return render_template(
         "peso.html", page="peso", today=today_str(), rows=rows,
-        latest=rows[-1] if rows else None, bmi=stats["bmi"],
-        rate=stats["rate_kg_per_week"], next_milestone=stats["next_milestone_kg"],
-        weeks_to=stats["weeks_to_milestone"])
+        latest=rows[-1] if rows else None, stats=stats, goal_month=goal_month)
 
 
 @app.route("/treino")
 def treino():
     conn = get_conn()
-    w = request.args.get("w") or WORKOUT_BY_WEEKDAY.get(date.today().weekday()) or "A"
+    today_workout = WORKOUT_BY_WEEKDAY.get(date.today().weekday())
+    w = request.args.get("w") or today_workout or "A"
     d = request.args.get("date") or today_str()
-    exercises = conn.execute(
-        "SELECT * FROM exercise WHERE workout = ? AND active = 1 ORDER BY sort, id", (w,)).fetchall()
-    cards = []
-    for ex in exercises:
-        today_sets = conn.execute(
-            "SELECT * FROM set_log WHERE exercise_id = ? AND date = ? ORDER BY set_number",
-            (ex["id"], d)).fetchall()
-        last = conn.execute(
-            "SELECT date FROM set_log WHERE exercise_id = ? AND date < ? ORDER BY date DESC LIMIT 1",
-            (ex["id"], d)).fetchone()
-        last_sets, suggestion = [], None
-        if last:
-            last_sets = conn.execute(
-                "SELECT * FROM set_log WHERE exercise_id = ? AND date = ? ORDER BY set_number",
-                (ex["id"], last["date"])).fetchall()
-            complete = (len(last_sets) >= ex["target_sets"]
-                        and all((s["reps"] or 0) >= ex["target_reps"] for s in last_sets))
-            if complete:
-                if ex["kind"] == "time":
-                    suggestion = ex["target_reps"] + 5  # bateu a meta: sugere +5 s
-                else:
-                    top = max((s["weight_kg"] or 0) for s in last_sets)
-                    suggestion = top + 2.5
-        cards.append({"row": ex, "today": today_sets, "last_date": last["date"] if last else None,
-                      "last_sets": last_sets, "suggestion": suggestion})
-    return render_template("treino.html", page="treino", workout=w, date=d, cards=cards)
+    return render_template("treino.html", page="treino", workout=w, date=d,
+                           today_workout=today_workout,
+                           cards=actions.workout_cards(conn, w, d),
+                           rebalance=actions.rebalance_plan(conn))
 
 
 @app.route("/dieta")
@@ -294,9 +310,13 @@ def update_item(item_id):
     p = request.get_json()
     if p.get("delete"):
         actions.update_meal_item(get_conn(), item_id, delete=True)
+    elif p.get("scale"):
+        # campo de gramas inline da Dieta: escala os macros junto
+        actions.set_item_grams(get_conn(), item_id, p["grams"])
     else:
-        actions.update_meal_item(get_conn(), item_id, p["grams"], p["raw_factor"],
-                                 p["protein_g"], p["carbs_g"], p["fat_g"], p["kcal"])
+        actions.update_meal_item(get_conn(), item_id, p.get("grams"), p.get("raw_factor"),
+                                 p.get("protein_g"), p.get("carbs_g"), p.get("fat_g"),
+                                 p.get("kcal"))
     return jsonify(ok=True)
 
 

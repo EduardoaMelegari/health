@@ -69,6 +69,87 @@ def meal_library(conn):
     return cards
 
 
+def next_meals(conn, d):
+    """Refeições fixas do dia (shopping=1 — "Extra" fica de fora) que ainda não
+    têm nada no food_log, na ordem do plano. A primeira é a "próxima ação" da
+    Hoje; as demais aparecem esmaecidas."""
+    logged = {r["meal"] for r in conn.execute(
+        "SELECT DISTINCT meal FROM food_log WHERE date = ? AND meal IS NOT NULL", (d,))}
+    pending = []
+    for m in conn.execute("SELECT * FROM meal WHERE shopping = 1 ORDER BY sort"):
+        if m["name"] in logged:
+            continue
+        options = [{"row": o, "macros": option_macros(conn, o["id"])}
+                   for o in conn.execute(
+                       "SELECT * FROM meal_option WHERE meal_id = ? AND active = 1"
+                       " ORDER BY sort, id", (m["id"],))]
+        if options:
+            pending.append({"row": m, "options": options})
+    return pending
+
+
+def workout_cards(conn, workout, d):
+    """Exercícios do treino com as séries do dia, a última sessão e a sugestão de
+    progressão (+2,5 kg ou +5 s quando a meta anterior foi batida). Usada pela
+    página de treino e pelo card de ação da Hoje."""
+    cards = []
+    for ex in conn.execute(
+            "SELECT * FROM exercise WHERE workout = ? AND active = 1 ORDER BY sort, id",
+            (workout,)):
+        today_sets = conn.execute(
+            "SELECT * FROM set_log WHERE exercise_id = ? AND date = ? ORDER BY set_number",
+            (ex["id"], d)).fetchall()
+        last = conn.execute(
+            "SELECT date FROM set_log WHERE exercise_id = ? AND date < ? ORDER BY date DESC LIMIT 1",
+            (ex["id"], d)).fetchone()
+        last_sets, suggestion = [], None
+        if last:
+            last_sets = conn.execute(
+                "SELECT * FROM set_log WHERE exercise_id = ? AND date = ? ORDER BY set_number",
+                (ex["id"], last["date"])).fetchall()
+            complete = (len(last_sets) >= ex["target_sets"]
+                        and all((s["reps"] or 0) >= ex["target_reps"] for s in last_sets))
+            if complete:
+                if ex["kind"] == "time":
+                    suggestion = ex["target_reps"] + 5  # bateu a meta: sugere +5 s
+                else:
+                    top = max((s["weight_kg"] or 0) for s in last_sets)
+                    suggestion = top + 2.5
+        cards.append({"row": ex, "today": today_sets, "last_date": last["date"] if last else None,
+                      "last_sets": last_sets, "suggestion": suggestion})
+    return cards
+
+
+def rebalance_plan(conn):
+    """Proposta de balanceamento ABC do redesign: 2× supino sem trabalho lateral/
+    posterior de ombro e core só na segunda. Devolve apenas as mudanças que ainda
+    não estão no plano — quando a lista esvazia, o banner some sozinho."""
+
+    def find(workout, like):
+        return conn.execute(
+            "SELECT * FROM exercise WHERE workout = ? AND active = 1 AND name LIKE ?",
+            (workout, like)).fetchone()
+
+    plan = []
+    curl = find("B", "Rosca direta%")
+    if curl and not find("B", "Elevação lateral%"):
+        plan.append({"op": "rename", "exercise_id": curl["id"],
+                     "why": "2× supino (A+C) sem ombro lateral/posterior",
+                     "what": "B: rosca direta ⇢ elevação lateral 3×12",
+                     "name": "Elevação lateral", "sets": 3, "reps": 12, "kind": "weight"})
+    if not find("C", "Face pull%"):
+        plan.append({"op": "add", "workout": "C",
+                     "why": "C sem posterior de ombro direto",
+                     "what": "C: + face pull 3×12 (fim do treino)",
+                     "name": "Face pull", "sets": 3, "reps": 12, "kind": "weight"})
+    if not find("C", "Prancha%"):
+        plan.append({"op": "add", "workout": "C",
+                     "why": "core só na segunda",
+                     "what": "C: + prancha 3×30 s",
+                     "name": "Prancha (segundos)", "sets": 3, "reps": 30, "kind": "time"})
+    return plan
+
+
 def tasks_for_date(conn, d):
     """Tarefas agendadas para o dia (filtra por weekday) com o status de conclusão."""
     wd = str(d.weekday())
@@ -150,12 +231,32 @@ def weight_stats(conn, cfg):
             next_milestone = max(below)
             if rate and rate < 0:
                 weeks_to = round((current - next_milestone) / -rate)
+
+    # meta final = último marco da config; ETA pela mesma média móvel do ritmo
+    goal = milestones[-1] if milestones else None
+    start = float(cfg.get("start_weight") or (moving[0] if moving else 0)) or None
+    weeks_to_goal = lost = progress = None
+    ticks = []
+    if moving and goal:
+        if rate and rate < 0 and moving[-1] > goal:
+            weeks_to_goal = round((moving[-1] - goal) / -rate)
+        if start and start > goal:
+            lost = round(start - moving[-1], 1)
+            span = start - goal
+            progress = round(max(0, min(100, 100 * (start - moving[-1]) / span)), 1)
+            # marcos intermediários viram traços verticais na barra do hero
+            ticks = [round(100 * (start - m) / span, 1) for m in milestones[:-1]
+                     if start > m > goal]
     return {
         "history": [{"date": r["date"], "weight_kg": r["weight_kg"]} for r in rows],
         "moving_avg": moving,
         "latest_kg": latest["weight_kg"] if latest else None,
+        "moving_now_kg": moving[-1] if moving else None,
         "bmi": bmi, "rate_kg_per_week": rate,
         "next_milestone_kg": next_milestone, "weeks_to_milestone": weeks_to,
+        "goal_kg": goal, "weeks_to_goal": weeks_to_goal,
+        "start_weight_kg": start, "lost_kg": lost,
+        "milestones": milestones, "goal_progress_pct": progress, "goal_ticks_pct": ticks,
     }
 
 
@@ -268,6 +369,23 @@ def update_meal_item(conn, item_id, grams=None, raw_factor=None,
         (pick(grams, cur["grams"]), pick(raw_factor, cur["raw_factor"]),
          pick(protein_g, cur["protein_g"]), pick(carbs_g, cur["carbs_g"]),
          pick(fat_g, cur["fat_g"]), pick(kcal, cur["kcal"]), item_id))
+    conn.commit()
+
+
+def set_item_grams(conn, item_id, grams):
+    """Muda só a gramagem de um item e escala os macros na mesma proporção — é o
+    que o campo de gramas inline da Dieta faz (P/C/G e fator cru continuam
+    editáveis em 'editar item', para quando o alimento em si mudar)."""
+    cur = conn.execute("SELECT * FROM meal_item WHERE id = ?", (item_id,)).fetchone()
+    if cur is None:
+        raise ValueError(f"item {item_id} não existe")
+    grams = float(grams or 0)
+    factor = grams / cur["grams"] if cur["grams"] else 0
+    conn.execute(
+        "UPDATE meal_item SET grams = ?, protein_g = ?, carbs_g = ?, fat_g = ?, kcal = ?"
+        " WHERE id = ?",
+        (grams, round(cur["protein_g"] * factor, 1), round(cur["carbs_g"] * factor, 1),
+         round(cur["fat_g"] * factor, 1), round(cur["kcal"] * factor), item_id))
     conn.commit()
 
 

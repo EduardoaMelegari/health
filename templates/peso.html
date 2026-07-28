@@ -7,31 +7,80 @@
   <p class="sub">Pese-se todo dia de manhã, em jejum e após ir ao banheiro. O peso oscila por água e intestino — acompanhe a <strong>média móvel</strong>, não o número isolado.</p>
 </div>
 
+{% if stats.moving_now_kg and stats.goal_kg %}
+<div class="goal-card">
+  <div class="goal-top">
+    <span class="micro">🎯 Meta</span>
+    {% if stats.rate_kg_per_week is not none %}
+    <span class="chip sm {{ 'ok' if stats.rate_kg_per_week <= -0.4 else 'warn' }}">
+      {{ 'no ritmo' if stats.rate_kg_per_week <= -0.4 else 'abaixo do ritmo' }} ·
+      {{ stats.rate_kg_per_week | num | replace('-', '−') }} kg/sem
+    </span>
+    {% endif %}
+  </div>
+
+  <div class="goal-now">
+    <b>{{ stats.moving_now_kg | round(1) | num }}</b>
+    <span class="u">kg · média móvel</span>
+    <span class="to">→ {{ stats.goal_kg | num }} kg</span>
+  </div>
+
+  {% if stats.goal_progress_pct is not none %}
+  <div class="goal-bar">
+    <div class="goal-track"><div class="goal-fill" style="width:{{ stats.goal_progress_pct }}%"></div></div>
+    {% for pos in stats.goal_ticks_pct %}<div class="goal-tick" style="left:{{ pos }}%"></div>{% endfor %}
+  </div>
+  <div class="goal-scale">
+    <span>{{ stats.start_weight_kg | num }}</span>
+    {% for m in stats.milestones %}
+    <span class="{{ 'end' if loop.last }}">{{ m | num }}</span>
+    {% endfor %}
+  </div>
+  {% endif %}
+
+  <p class="goal-eta">
+    {% if stats.next_milestone_kg %}
+      Próximo marco <strong>{{ stats.next_milestone_kg | num }} kg</strong>:
+      faltam <strong>{{ (stats.moving_now_kg - stats.next_milestone_kg) | round(1) | num }} kg</strong>
+      {% if stats.weeks_to_milestone %}
+        — <strong class="hl">~{{ stats.weeks_to_milestone }} semana{{ 's' if stats.weeks_to_milestone != 1 }}</strong> nesse ritmo.
+      {% else %}.
+      {% endif %}
+    {% endif %}
+    {% if stats.weeks_to_goal %}
+      Meta final em ~{{ stats.weeks_to_goal }} semanas{{ ' (%s)' % goal_month if goal_month }}.
+    {% elif not stats.next_milestone_kg %}
+      Meta final batida — hora de revisar os marcos com o coach.
+    {% endif %}
+  </p>
+</div>
+{% endif %}
+
 <div class="tiles">
   <div class="tile">
-    <div class="k">Atual</div>
-    <div class="v">{{ latest.weight_kg | replace('.', ',') if latest else '—' }}<small> kg</small></div>
+    <div class="k">Hoje</div>
+    <div class="v">{{ latest.weight_kg | num if latest else '—' }}<small> kg</small></div>
   </div>
   <div class="tile">
     <div class="k">IMC</div>
-    <div class="v">{{ bmi | replace('.', ',') if bmi else '—' }}</div>
+    <div class="v">{{ stats.bmi | num if stats.bmi else '—' }}</div>
   </div>
   <div class="tile">
-    <div class="k">Ritmo</div>
-    <div class="v">{{ rate | replace('.', ',') if rate is not none else '—' }}<small> kg/sem</small></div>
+    <div class="k">Perdido</div>
+    {# lost_kg > 0 = perdeu (verde); negativo é ganho e sai com o sinal do próprio número #}
+    <div class="v {{ 'good' if stats.lost_kg and stats.lost_kg > 0 }}">
+      {%- if stats.lost_kg is none -%}—
+      {%- elif stats.lost_kg > 0 -%}−{{ stats.lost_kg | num }}
+      {%- else -%}{{ stats.lost_kg | num }}
+      {%- endif -%}
+      <small> kg</small>
+    </div>
   </div>
 </div>
 
-{% if next_milestone %}
-<p class="notice" style="margin:0 0 14px">
-  Próximo marco: <strong>{{ next_milestone | round | int }} kg</strong>
-  {% if weeks_to %} — nesse ritmo, em ~{{ weeks_to }} semana{{ 's' if weeks_to != 1 }}{% endif %}.
-</p>
-{% endif %}
-
 <div class="card">
-  <h2>Registrar pesagem</h2>
-  <div class="row">
+  <span class="micro">⚖️ Registrar pesagem</span>
+  <div class="row" style="margin-top:10px">
     <div class="field">
       <label for="w-date">Data</label>
       <input type="date" id="w-date" value="{{ today }}">
@@ -49,7 +98,7 @@
 </div>
 
 <div class="card">
-  <h2>Evolução</h2>
+  <span class="micro">📉 Evolução</span>
   {% if rows | length >= 2 %}
     <div style="position:relative; height:260px">
       <canvas id="chart" role="img" aria-label="Gráfico da evolução do peso com média móvel"></canvas>

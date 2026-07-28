@@ -32,14 +32,15 @@ pelo celular via `http://IP-DO-SERVIDOR:8080`.
 
 ## Páginas
 
-- **Hoje** — checklist do dia, treino do dia e escolha das refeições; painel de
-  macros mostra o que falta para bater proteína/kcal do dia.
-- **Peso** — registro semanal, gráfico com média móvel (4 pesagens), marcos
-  (90/87/84/81 kg), IMC e ritmo de perda.
-- **Treino** — cargas por série dos treinos A/B/C; sugestão de +2,5 kg quando a
-  meta de séries×reps é batida.
-- **Dieta** — edição das opções de refeição (peso pronto) e lista de compras
-  semanal em peso cru.
+- **Hoje** — fluxo do dia: donut de kcal restantes + macros no topo, "próximas
+  ações" (treino do dia, próxima refeição não registrada, tarefas pendentes) e o
+  acordeão "feito hoje" com o que já foi concluído/comido.
+- **Peso** — hero de meta (média móvel, ritmo, barra até 81 kg e ETA), gráfico com
+  média móvel (4 pesagens), marcos (90/87/84/81 kg), IMC e o quanto já foi perdido.
+- **Treino** — abas A/B/C, cargas por série com sugestão de +2,5 kg quando a meta
+  de séries×reps é batida, e o banner de balanceamento ABC (aplicável em 1 toque).
+- **Dieta** — refeições colapsáveis, edição de gramas inline (macros escalam
+  junto) e lista de compras semanal em peso cru.
 - **Coach** — chat com a Claude que lê seu progresso (peso, aderência, macros) e
   dá feedback, e edita cardápio/treino/metas direto pela conversa. Requer chave
   de API (abaixo).

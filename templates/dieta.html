@@ -3,103 +3,161 @@
 {% block content %}
 
 <div class="page-head">
-  <h1>Biblioteca</h1>
+  <h1>Dieta</h1>
   <p class="sub">Recomendações do que comer, em peso PRONTO (já preparado). No dia a dia, registre o que comeu na aba <a href="/">Hoje</a>. O fator cru converte para a lista de compras.</p>
 </div>
 
 <div class="card">
-  <h2>Lista de compras da semana</h2>
-  <p class="sub" style="margin-bottom:10px">Calculada a partir das recomendações: a 1ª opção de cada refeição principal × 7 dias, em peso CRU.</p>
-  <button class="btn" onclick="loadShopping()">Gerar lista</button>
-  <div id="shopping" style="margin-top:10px"></div>
+  <div class="card-head">
+    <div>
+      <span class="micro">🛒 Compras da semana</span>
+      <span class="sub" id="shopping-sub">peso cru · 1ª opção de cada refeição × 7 dias</span>
+    </div>
+    <button class="btn btn-sm" onclick="loadShopping(this)">Gerar lista</button>
+  </div>
+  <div id="shopping"></div>
 </div>
 
 {% for m in meals %}
-<div class="card meal">
-  <h3 style="margin-bottom:6px">{{ m.row.name }}</h3>
+{% set kcal_avg = (m.options | sum(attribute='macros.kcal') / (m.options | length)) if m.options else 0 %}
+<details class="card meal-card">
+  <summary>
+    <span class="meal-name">{{ m.row.name }}</span>
+    <span class="meal-meta">
+      {{ m.options | length }} {{ 'opção' if m.options | length == 1 else 'opções' }}
+      {%- if m.options %} · ~{{ kcal_avg | round | int }} kcal{% endif %}
+    </span>
+  </summary>
 
-  {% for opt in m.options %}
-  <details style="border-top:1px solid var(--hair); padding:4px 0">
-    <summary>
-      {{ opt.row.name }}
-      <span class="sub" style="display:inline"> · {{ opt.macros.kcal | round | int }} kcal · P {{ opt.macros.protein_g | round | int }}g</span>
-    </summary>
-    {% if opt.row.description %}<p class="notice" style="margin-top:4px">{{ opt.row.description }}</p>{% endif %}
+  <div class="opt-list">
+    {% for opt in m.options %}
+    <details class="opt-item">
+      <summary>
+        <span class="o-txt">
+          <span class="o-name">{{ opt.row.name }}</span>
+          <span class="o-mac">{{ opt.macros.kcal | round | int }} kcal · P {{ opt.macros.protein_g | round | int }} g · {{ opt['items'] | length }} {{ 'item' if opt['items'] | length == 1 else 'itens' }}</span>
+        </span>
+      </summary>
 
-    <div class="table-wrap" style="margin-top:8px">
-      <table>
-        <thead>
-          <tr><th>Alimento</th><th>g pronto</th><th>fator</th><th>P</th><th>C</th><th>G</th><th>kcal</th><th></th></tr>
-        </thead>
-        <tbody>
-          {% for i in opt['items'] %}
-          <tr data-item="{{ i.id }}">
-            <td>{{ i.food }}</td>
-            <td><input class="i-grams" type="number" step="1" value="{{ i.grams | round | int }}" style="width:64px;padding:6px"></td>
-            <td><input class="i-raw" type="number" step="0.05" value="{{ i.raw_factor }}" style="width:60px;padding:6px"></td>
-            <td><input class="i-p" type="number" step="0.5" value="{{ i.protein_g }}" style="width:56px;padding:6px"></td>
-            <td><input class="i-c" type="number" step="0.5" value="{{ i.carbs_g }}" style="width:56px;padding:6px"></td>
-            <td><input class="i-f" type="number" step="0.5" value="{{ i.fat_g }}" style="width:56px;padding:6px"></td>
-            <td><input class="i-k" type="number" step="1" value="{{ i.kcal | round | int }}" style="width:64px;padding:6px"></td>
-            <td style="white-space:nowrap">
-              <button class="btn-ghost" style="padding:5px 9px" onclick="saveItem(this.closest('tr'))">✓</button>
-              <button class="btn-danger" onclick="deleteItem({{ i.id }}, '{{ i.food }}')">×</button>
-            </td>
-          </tr>
-          {% endfor %}
-        </tbody>
-      </table>
-    </div>
+      {% if opt.row.description %}<p class="notice">{{ opt.row.description }}</p>{% endif %}
 
-    <div class="row" style="margin-top:8px">
-      <input type="text" class="new-food" placeholder="Novo alimento" style="flex:2">
-      <input type="number" class="new-grams" placeholder="g" style="flex:1">
-      <button class="btn-ghost" onclick="addItem(this, {{ opt.row.id }})">+ item</button>
-    </div>
+      <div class="opt-edit">
+        {% for i in opt['items'] %}
+        <div class="item" data-item="{{ i.id }}">
+          <div class="item-grid">
+            <span class="f">{{ i.food }}</span>
+            <input class="i-grams" type="number" step="1" inputmode="numeric" value="{{ i.grams | round | int }}"
+                   aria-label="Gramas de {{ i.food }}">
+            <span class="k">{{ i.kcal | round | int }} kcal</span>
+          </div>
+          {# macros e fator cru só quando o alimento em si muda — o normal é só a grama #}
+          <details class="edit-fine">
+            <summary>editar item ▸</summary>
+            <div class="item-fine">
+              <div><label>cru</label><input class="i-raw" type="number" step="0.05" value="{{ i.raw_factor }}"></div>
+              <div><label>P</label><input class="i-p" type="number" step="0.5" value="{{ i.protein_g }}"></div>
+              <div><label>C</label><input class="i-c" type="number" step="0.5" value="{{ i.carbs_g }}"></div>
+              <div><label>G</label><input class="i-f" type="number" step="0.5" value="{{ i.fat_g }}"></div>
+              <div><label>kcal</label><input class="i-k" type="number" step="1" value="{{ i.kcal | round | int }}"></div>
+              <button class="btn-danger" title="Excluir item" onclick="deleteItem({{ i.id }}, '{{ i.food }}')">×</button>
+            </div>
+            <button class="btn-ghost btn-sm" style="margin-top:6px" onclick="saveItem(this)">Salvar item</button>
+          </details>
+        </div>
+        {% endfor %}
 
-    <details style="margin-top:8px">
-      <summary>Editar opção</summary>
-      <div class="field" style="margin-top:6px"><input type="text" class="o-name" value="{{ opt.row.name }}"></div>
-      <div class="field"><input type="text" class="o-desc" value="{{ opt.row.description or '' }}" placeholder="Dica de preparo"></div>
-      <div class="row">
-        <button class="btn-ghost" onclick="updateOption(this, {{ opt.row.id }})">Atualizar</button>
-        <button class="btn-danger" onclick="removeOption({{ opt.row.id }}, '{{ opt.row.name }}')">Remover opção</button>
+        <div class="opt-edit-foot">
+          <button class="btn-ghost" onclick="toggleNewItem(this)">+ item</button>
+          <button class="btn btn-sm brand" onclick="saveGrams(this)">Atualizar</button>
+        </div>
+
+        <div class="row new-item" hidden>
+          <input type="text" class="new-food" placeholder="Novo alimento" style="flex:2">
+          <input type="number" class="new-grams" placeholder="g" style="flex:1">
+          <button class="btn-ghost" onclick="addItem(this, {{ opt.row.id }})">Adicionar</button>
+        </div>
+
+        <details class="edit-fine">
+          <summary>editar opção ▸</summary>
+          <div class="field" style="margin-top:6px"><input type="text" class="o-edit-name" value="{{ opt.row.name }}"></div>
+          <div class="field"><input type="text" class="o-edit-desc" value="{{ opt.row.description or '' }}" placeholder="Dica de preparo"></div>
+          <div class="row">
+            <button class="btn-ghost" onclick="updateOption(this, {{ opt.row.id }})">Atualizar opção</button>
+            <button class="btn-danger" onclick="removeOption({{ opt.row.id }}, '{{ opt.row.name }}')">Remover opção</button>
+          </div>
+        </details>
       </div>
     </details>
-  </details>
-  {% endfor %}
-
-  <div class="row" style="margin-top:10px">
-    <input type="text" class="new-opt" placeholder="Nova opção para {{ m.row.name | lower }}" style="flex:2">
-    <button class="btn-ghost" onclick="addOption(this, {{ m.row.id }})">+ opção</button>
+    {% endfor %}
   </div>
-</div>
+
+  <details class="new-opt-box">
+    <summary class="btn-dashed">+ nova opção</summary>
+    <div class="row" style="margin-top:8px">
+      <input type="text" class="new-opt" placeholder="Nome da nova opção de {{ m.row.name | lower }}" style="flex:2">
+      <button class="btn-ghost" onclick="addOption(this, {{ m.row.id }})">Criar</button>
+    </div>
+  </details>
+</details>
 {% endfor %}
 
 {% endblock %}
 {% block scripts %}
 <script>
-async function loadShopping() {
-  const r = await (await fetch("/api/shopping-list")).json();
-  const el = document.getElementById("shopping");
-  if (!r.items.length) { el.innerHTML = '<p class="empty">Nada para comprar.</p>'; return; }
-  el.innerHTML = '<div class="table-wrap"><table><thead><tr><th>Alimento</th><th>Quantidade (cru)</th></tr></thead><tbody>' +
-    r.items.map((i) => {
-      const q = i.grams_raw >= 1000
-        ? (i.grams_raw / 1000).toLocaleString("pt-BR", { maximumFractionDigits: 2 }) + " kg"
-        : i.grams_raw + " g";
-      return `<tr><td>${i.food}</td><td>${q}</td></tr>`;
-    }).join("") + "</tbody></table></div>";
+function qty(g) {
+  return g >= 1000
+    ? (g / 1000).toLocaleString("pt-BR", { maximumFractionDigits: 2 }) + " kg"
+    : g + " g";
 }
 
-async function saveItem(tr) {
-  const v = (cls) => tr.querySelector(cls).value.replace(",", ".");
-  await App.post("/api/item/" + tr.dataset.item, {
-    grams: v(".i-grams"), raw_factor: v(".i-raw"), protein_g: v(".i-p"),
+async function loadShopping(btn) {
+  btn.disabled = true;
+  try {
+    const r = await (await fetch("/api/shopping-list")).json();
+    const el = document.getElementById("shopping");
+    if (!r.items.length) { el.innerHTML = '<p class="empty">Nada para comprar.</p>'; return; }
+    el.className = "chips-mono";
+    el.innerHTML = r.items
+      .map((i) => `<span class="chip mono">${i.food} ${qty(i.grams_raw)}</span>`)
+      .join("");
+    document.getElementById("shopping-sub").textContent =
+      `${r.items.length} ${r.items.length === 1 ? "item" : "itens"} · peso cru · sábado`;
+  } finally { btn.disabled = false; }
+}
+
+function toggleNewItem(btn) {
+  const box = btn.closest(".opt-edit").querySelector(".new-item");
+  box.hidden = !box.hidden;
+  if (!box.hidden) box.querySelector(".new-food").focus();
+}
+
+// "Atualizar": só as gramas mudadas — o backend escala os macros na mesma proporção
+async function saveGrams(btn) {
+  const panel = btn.closest(".opt-edit");
+  const changed = [...panel.querySelectorAll(".item")].filter((it) => {
+    const g = it.querySelector(".i-grams");
+    return g.value !== g.defaultValue;
+  });
+  if (!changed.length) return;
+  btn.disabled = true;
+  for (const it of changed) {
+    await App.post("/api/item/" + it.dataset.item, {
+      grams: it.querySelector(".i-grams").value.replace(",", "."), scale: true,
+    });
+  }
+  location.reload();
+}
+
+// "Salvar item": macros e fator cru na mão, sem escalar nada
+async function saveItem(btn) {
+  const item = btn.closest(".item");
+  const v = (cls) => item.querySelector(cls).value.replace(",", ".");
+  await App.post("/api/item/" + item.dataset.item, {
+    grams: item.querySelector(".i-grams").value.replace(",", "."),
+    raw_factor: v(".i-raw"), protein_g: v(".i-p"),
     carbs_g: v(".i-c"), fat_g: v(".i-f"), kcal: v(".i-k"),
   });
-  tr.style.opacity = 0.4;
-  setTimeout(() => (tr.style.opacity = 1), 400);
+  location.reload();
 }
 
 async function deleteItem(id, food) {
@@ -117,10 +175,10 @@ async function addItem(btn, optionId) {
 }
 
 async function updateOption(btn, optId) {
-  const d = btn.closest("details");
+  const box = btn.closest("details");
   await App.post("/api/option/" + optId, {
-    name: d.querySelector(".o-name").value,
-    description: d.querySelector(".o-desc").value,
+    name: box.querySelector(".o-edit-name").value,
+    description: box.querySelector(".o-edit-desc").value,
   });
   location.reload();
 }

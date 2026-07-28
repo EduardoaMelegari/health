@@ -9,33 +9,63 @@
 
 <div class="workout-tabs">
   {% for w in ['A', 'B', 'C'] %}
-  <a href="/treino?w={{ w }}" class="{{ 'active' if workout == w }}">Treino {{ w }}</a>
+  <a href="/treino?w={{ w }}" class="{{ 'active' if workout == w }}">
+    {{ w }}{{ ' · hoje' if today_workout == w }}
+  </a>
   {% endfor %}
 </div>
 
+{% if rebalance %}
+<div class="banner warn">
+  <span class="micro">⚠️ Balanceamento ABC</span>
+  <ul>
+    {% for ch in rebalance %}
+    <li>{{ ch.why }} → <strong>{{ ch.what }}</strong></li>
+    {% endfor %}
+  </ul>
+  <div class="banner-foot">
+    <button class="btn btn-sm" onclick="applyRebalance(this)">Aplicar mudanças</button>
+    <a class="btn-ghost warn btn-sm" href="/coach">Perguntar ao coach</a>
+  </div>
+</div>
+{% endif %}
+
+{# abre o primeiro exercício ainda sem séries de hoje — é onde o treino continua #}
+{% set ns = namespace(opened=false) %}
 {% for c in cards %}
 {% set is_time = c.row.kind == 'time' %}
-<div class="card" data-ex="{{ c.row.id }}">
-  <div style="display:flex; align-items:baseline; gap:8px">
-    <h2 style="margin:0">{{ c.row.name }}</h2>
-    <span class="sub">{{ c.row.target_sets }}×{{ c.row.target_reps }}{{ ' s' if is_time }}</span>
-  </div>
+{% set open_this = not ns.opened and not c.today %}
+{% if open_this %}{% set ns.opened = true %}{% endif %}
+<details class="card ex-card" data-ex="{{ c.row.id }}" {{ 'open' if open_this }}>
+  <summary>
+    <span class="ex-name">{{ c.row.name }}</span>
+    <span class="ex-meta">
+      {{ c.row.target_sets }}×{{ c.row.target_reps }}{{ ' s' if is_time }}
+      {%- if c.last_sets %}<span class="ex-short"> · últ.
+        {%- if is_time %} {{ c.last_sets[0].reps or '—' }} s
+        {%- else %} {{ c.last_sets[0].weight_kg | num if c.last_sets[0].weight_kg is not none else '—' }}×{{ c.last_sets[0].reps or '—' }}
+        {%- endif %}</span>{% endif -%}
+    </span>
+    {% if c.suggestion %}
+    <span class="ex-pill">↑ {{ c.suggestion | num }}{{ ' s' if is_time else ' kg' }}</span>
+    {% endif %}
+  </summary>
 
   {% if c.last_sets %}
-  <p class="last-info">
-    Última ({{ c.last_date[8:] }}/{{ c.last_date[5:7] }}):
+  <span class="ex-last">
+    última {{ c.last_date[8:] }}/{{ c.last_date[5:7] }}:
     {% for s in c.last_sets -%}
-      {%- if is_time -%}{{ s.reps or '—' }} s{%- else -%}{{ (s.weight_kg | replace('.', ',')) if s.weight_kg is not none else '—' }}×{{ s.reps or '—' }}{%- endif -%}
+      {%- if is_time -%}{{ s.reps or '—' }} s{%- else -%}{{ (s.weight_kg | num) if s.weight_kg is not none else '—' }}×{{ s.reps or '—' }}{%- endif -%}
       {{- ', ' if not loop.last }}
     {%- endfor %}
-  </p>
+    {{- ' ✓' if c.suggestion }}
+  </span>
   {% endif %}
-  {% if c.suggestion %}<p class="suggestion">Sugestão de hoje: {{ c.suggestion | replace('.', ',') }}{{ ' s' if is_time else ' kg' }}</p>{% endif %}
 
   <div class="sets">
-    <div class="set-grid {{ 'time' if is_time }}" style="margin-top:10px">
-      {% if is_time %}<span class="n"></span><span class="n">segundos</span>
-      {% else %}<span class="n"></span><span class="n">kg</span><span class="n">reps</span>{% endif %}
+    <div class="set-grid {{ 'time' if is_time }}">
+      {% if is_time %}<span class="h"></span><span class="h">SEGUNDOS</span>
+      {% else %}<span class="h"></span><span class="h">KG</span><span class="h">REPS</span>{% endif %}
     </div>
     {% set prefill = c.today if c.today else [] %}
     {% set n_rows = [prefill | length, c.row.target_sets] | max %}
@@ -45,7 +75,7 @@
       {% if not is_time %}
       <input type="number" step="0.5" inputmode="decimal" class="in-kg"
              value="{{ prefill[i].weight_kg if i < prefill | length and prefill[i].weight_kg is not none else '' }}"
-             placeholder="{{ c.suggestion | replace('.', ',') if c.suggestion else 'kg' }}">
+             placeholder="{{ c.suggestion | num if c.suggestion else 'kg' }}">
       {% endif %}
       <input type="number" step="1" inputmode="numeric" class="in-reps"
              value="{{ prefill[i].reps if i < prefill | length and prefill[i].reps is not none else '' }}"
@@ -54,13 +84,13 @@
     {% endfor %}
   </div>
 
-  <div class="row" style="margin-top:12px">
-    <button class="btn-ghost" onclick="addRow(this.closest('.card'))">+ série</button>
+  <div class="ex-foot">
+    <button class="btn-ghost" onclick="addRow(this.closest('.ex-card'))">+ série</button>
     <button class="btn btn-sm" onclick="saveSets(this, {{ c.row.id }})">Salvar</button>
   </div>
 
-  <details style="margin-top:10px">
-    <summary>Editar exercício</summary>
+  <details class="edit-fine" style="margin-top:10px">
+    <summary>editar exercício ▸</summary>
     <div class="field" style="margin-top:8px">
       <input type="text" class="ed-name" value="{{ c.row.name }}">
     </div>
@@ -76,18 +106,18 @@
       </select>
     </div>
     <div class="row">
-      <button class="btn-ghost" onclick="updateExercise(this.closest('.card'), {{ c.row.id }})">Atualizar</button>
+      <button class="btn-ghost" onclick="updateExercise(this.closest('.ex-card'), {{ c.row.id }})">Atualizar</button>
       <button class="btn-danger" onclick="removeExercise({{ c.row.id }}, '{{ c.row.name }}')">Remover</button>
     </div>
   </details>
-</div>
+</details>
 {% endfor %}
 
 {% if not cards %}<p class="empty">Nenhum exercício no treino {{ workout }}.</p>{% endif %}
 
-<div class="card">
-  <h2>Adicionar exercício ao treino {{ workout }}</h2>
-  <div class="field"><input type="text" id="new-name" placeholder="Nome do exercício"></div>
+<details class="card">
+  <summary>+ adicionar exercício ao treino {{ workout }}</summary>
+  <div class="field" style="margin-top:8px"><input type="text" id="new-name" placeholder="Nome do exercício"></div>
   <div class="row">
     <div class="field"><label>Séries</label><input type="number" id="new-sets" value="4"></div>
     <div class="field"><label>Reps / seg alvo</label><input type="number" id="new-reps" value="8"></div>
@@ -100,13 +130,14 @@
     </select>
   </div>
   <button class="btn" onclick="addExercise()">Adicionar</button>
-</div>
+</details>
 
 {% endblock %}
 {% block scripts %}
 <script>
 const DATE = "{{ date }}";
 const WORKOUT = "{{ workout }}";
+const REBALANCE = {{ rebalance | tojson }};
 
 function addRow(card) {
   const rows = card.querySelectorAll(".set-row");
@@ -117,7 +148,7 @@ function addRow(card) {
 }
 
 async function saveSets(btn, exId) {
-  const card = btn.closest(".card");
+  const card = btn.closest(".ex-card");
   const sets = [...card.querySelectorAll(".set-row")].map((r) => {
     const kg = r.querySelector(".in-kg"); // ausente em exercícios por tempo
     return {
@@ -157,6 +188,20 @@ async function removeExercise(exId, name) {
   if (!confirm('Remover "' + name + '" do treino? O histórico de cargas é mantido.')) return;
   await App.post("/api/exercise/" + exId, { delete: true });
   location.reload();
+}
+
+// banner one-shot: aplica pelas APIs de exercício já existentes e recarrega —
+// na volta o rebalance_plan vem vazio e o banner some sozinho
+async function applyRebalance(btn) {
+  btn.disabled = true;
+  try {
+    for (const ch of REBALANCE) {
+      const body = { name: ch.name, target_sets: ch.sets, target_reps: ch.reps, kind: ch.kind };
+      if (ch.op === "rename") await App.post("/api/exercise/" + ch.exercise_id, body);
+      else await App.post("/api/exercise", { workout: ch.workout, ...body });
+    }
+    location.reload();
+  } catch { btn.disabled = false; }
 }
 </script>
 {% endblock %}

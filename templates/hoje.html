@@ -2,109 +2,162 @@
 {% block title %}Hoje · Saúde{% endblock %}
 {% block content %}
 
-<div class="page-head">
-  <h1>Hoje</h1>
-  <p class="sub">{{ date_pt }}</p>
-  <div class="chips">
-    {% if workout %}
-      <a class="chip accent" href="/treino?w={{ workout }}">Treino {{ workout }} — academia</a>
-    {% elif is_run_day %}
-      <span class="chip accent">Dia de corrida</span>
-    {% else %}
-      <span class="chip">Descanso</span>
-    {% endif %}
-    {% if adherence is not none %}<span class="chip">Aderência 7d: {{ adherence }}%</span>{% endif %}
-    <span class="chip">Revisão em {{ next_review }}d</span>
+{% set kcal_pct = [100, (100 * consumed.kcal / targets.kcal) if targets.kcal else 0] | min %}
+{% set pending = tasks | rejectattr('done') | list %}
+{% set done_tasks = tasks | selectattr('done') | list %}
+{% set done_n = (done_tasks | length) + (logged | length) %}
+
+<header class="day-head">
+  <div class="kcal-ring {{ 'over' if consumed.kcal > targets.kcal * 1.07 }}"
+       id="kcal-ring" style="--pct: {{ kcal_pct | round(1) }}%">
+    <div class="ring-in">
+      <b id="kcal-left">{{ [0, targets.kcal - consumed.kcal] | max | int_br }}</b>
+      <span>kcal restantes</span>
+    </div>
   </div>
-</div>
+  <div class="day-meta">
+    <span class="day-date">{{ date_pt }}</span>
+    <span class="day-macros" id="macro-line">
+      P {{ consumed.protein_g | round | int }}/{{ targets.protein_g | round | int }} ·
+      C {{ consumed.carbs_g | round | int }}/{{ targets.carbs_g | round | int }} ·
+      G {{ consumed.fat_g | round | int }}/{{ targets.fat_g | round | int }}
+    </span>
+    <div class="chips" style="margin-top:0">
+      {% if adherence is not none %}
+      <span class="chip sm {{ 'ok' if adherence >= 80 else 'warn' }}">
+        {{ '✅' if adherence >= 80 else '⚠️' }} Aderência 7d: {{ adherence }}%
+      </span>
+      {% endif %}
+      <span class="chip sm">Revisão em {{ next_review }}d</span>
+    </div>
+  </div>
+</header>
 
 <section>
-  <div class="card" id="macros">
-    <h2>Macros do dia <span class="sub" style="display:inline">· dia de {{ targets.day_type }}</span></h2>
-    {% for key, label, unit in [('kcal','Calorias',' kcal'), ('protein_g','Proteína',' g'), ('carbs_g','Carbo',' g'), ('fat_g','Gordura',' g')] %}
-    <div class="macro-row">
-      <span class="name">{{ label }}</span>
-      <div class="track"><div class="fill" data-macro-fill="{{ key }}"></div></div>
-      <span class="val" data-macro-val="{{ key }}"></span>
+  <span class="micro">⏭️ Próximas ações</span>
+  <div class="flow">
+    {% for t in pending %}
+    {% set is_gym = workout and t.category == 'treino' and 'academia' in t.title | lower %}
+    <div class="act-card">
+      <div class="act">
+        <span class="act-ic {{ 'brand' if t.category == 'treino' }}">{{ TASK_EM.get(t.category, '📌') }}</span>
+        <div class="act-txt">
+          <span class="act-t">{{ t.title }}</span>
+          {% if is_gym and workout_hint %}<span class="act-s">{{ workout_hint }}</span>{% endif %}
+        </div>
+        {% if is_gym %}
+        <a class="btn btn-sm brand" href="/treino?w={{ workout }}">Registrar</a>
+        {% elif t.category == 'revisao' %}
+        <a class="btn btn-sm brand" href="/peso">Pesar</a>
+        {% endif %}
+        <button class="chk" aria-label="Concluir" title="Marcar como feita"
+                onclick="App.toggleTask(this.closest('.act-card'), {{ t.id }}, '{{ today }}')">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12l6 6L20 6"/></svg>
+        </button>
+      </div>
     </div>
     {% endfor %}
-    <p class="macro-note" id="macro-note"></p>
-  </div>
-</section>
 
-<section>
-  <h2>Checklist</h2>
-  {% if tasks %}
-    {% for t in tasks %}
-    <button class="task {{ 'done' if t.done }}" onclick="App.toggleTask(this, {{ t.id }}, '{{ today }}')">
-      <span class="box"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12l6 6L20 6"/></svg></span>
-      <span class="title">{{ t.title }}</span>
-      <span class="cat">{{ t.category }}</span>
-    </button>
-    {% endfor %}
-  {% else %}
-    <p class="empty">Nada agendado para hoje.</p>
-  {% endif %}
-</section>
-
-<section>
-  <h2>Registrado hoje</h2>
-  <div class="card">
-    {% if configured %}
-    <form class="quick-log" onsubmit="Food.quickLog(event)">
-      <textarea id="quick-text" rows="1" autocomplete="off"
-                placeholder="Descreva o que comeu… ex.: 3 ovos e uma banana (um item por linha, se quiser)"
-                oninput="Food.autogrow(this)" onkeydown="Food.onKey(event)"></textarea>
-      <button class="btn btn-sm" type="submit" id="quick-btn">Registrar</button>
-    </form>
-    {% else %}
-    <p class="notice" style="margin:0 0 8px">Registro por texto precisa da chave da API (aba Coach). Use "comi isso" abaixo enquanto isso.</p>
+    {% if is_run_day and not pending %}
+    <div class="act-card">
+      <div class="act">
+        <span class="act-ic brand">🏃</span>
+        <div class="act-txt"><span class="act-t">Dia de corrida</span></div>
+      </div>
+    </div>
     {% endif %}
-    <div id="food-log">
+
+    {% for m in next_meals %}
+    {% set first = m.options[0] %}
+    <div class="act-card {{ 'future' if not loop.first }}">
+      <div class="act">
+        <span class="act-ic action">{{ MEAL_EM.get(m.row.name | lower, '🍽️') }}</span>
+        <div class="act-txt">
+          <span class="act-t">{{ m.row.name }}: {{ first.row.name }}</span>
+          <span class="act-s mono">{{ first.macros.kcal | round | int }} kcal · P {{ first.macros.protein_g | round | int }} g</span>
+        </div>
+        <button class="btn btn-sm" onclick="Food.logOption(this, {{ first.row.id }})">comi isso</button>
+      </div>
+      {% if m.options | length > 1 %}
+      <details class="swap">
+        <summary>trocar ▾</summary>
+        <div class="opt-rows">
+          {% for opt in m.options[1:] %}
+          <div class="opt-row">
+            <div class="r-txt">
+              <span class="r-name">{{ opt.row.name }}</span>
+              <span class="r-mac">{{ opt.macros.kcal | round | int }} kcal · P {{ opt.macros.protein_g | round | int }} g</span>
+            </div>
+            <button class="btn-ghost action btn-sm" onclick="Food.logOption(this, {{ opt.row.id }})">comi isso</button>
+          </div>
+          {% endfor %}
+        </div>
+      </details>
+      {% endif %}
+    </div>
+    {% endfor %}
+
+    {% if not pending and not next_meals %}
+    <p class="empty">Tudo em dia ✓</p>
+    {% endif %}
+  </div>
+
+  <details class="done-panel" open>
+    <summary><span class="micro">✅ Feito hoje<span id="done-count">{{ ' · ' ~ done_n if done_n else '' }}</span></span></summary>
+    <div class="done-list" id="done-list">
+      {% for t in done_tasks %}
+      <div class="done-row">
+        <span class="em">{{ TASK_EM.get(t.category, '📌') }}</span>
+        <span class="t">{{ t.title }}</span>
+        {% if t.category == 'revisao' and weight_today %}
+        <span class="done-v">{{ weight_today | num }} kg</span>
+        {% endif %}
+      </div>
+      {% endfor %}
       {% for e in logged %}
       <div class="logitem" data-id="{{ e.id }}">
-        <span class="li-main">{% if e.meal %}<b>{{ e.meal }}:</b> {% endif %}{{ e.description }}</span>
+        <div class="li-top">
+          <span class="em">{{ MEAL_EM.get(e.meal | lower, '🍽️') if e.meal else '🍽️' }}</span>
+          <span class="li-main">{% if e.meal %}<b>{{ e.meal }}:</b> {% endif %}{{ e.description }}</span>
+          <button class="li-del" aria-label="Remover" onclick="Food.remove(this, {{ e.id }})">×</button>
+        </div>
         <span class="li-macros">{{ e.kcal | round | int }} kcal · P {{ e.protein_g | round | int }} · C {{ e.carbs_g | round | int }} · G {{ e.fat_g | round | int }}</span>
-        <button class="li-del" aria-label="Remover" onclick="Food.remove(this, {{ e.id }})">×</button>
       </div>
       {% endfor %}
     </div>
-    <p class="empty" id="food-empty" {{ 'style=display:none' | safe if logged }}>Nada registrado ainda. Toque em "comi isso" numa recomendação ou descreva acima.</p>
-  </div>
-</section>
+    <p class="empty" id="done-empty" {{ 'style=display:none' | safe if done_n }}>Nada concluído ainda hoje.</p>
+  </details>
 
-<section>
-  <h2>O que comer hoje <span class="sub" style="display:inline">· recomendações</span></h2>
-  <div class="meal-cards">
-  {% for mc in meal_cards %}
-  <div class="card meal">
-    <h3>{{ mc.row.name }}</h3>
-    {% for opt in mc.options %}
-    <div class="option static">
-      <span class="opt-name">{{ opt.row.name }}</span>
-      <span class="opt-macros">{{ opt.macros.kcal | round | int }} kcal · P {{ opt.macros.protein_g | round | int }} g · C {{ opt.macros.carbs_g | round | int }} g · G {{ opt.macros.fat_g | round | int }} g</span>
-      <span class="opt-items">{% for i in opt['items'] %}{{ i.food }} {{ i.grams | round | int }} g{{ ' · ' if not loop.last }}{% endfor %}</span>
-      {% if opt.row.description %}<span class="opt-desc">{{ opt.row.description }}</span>{% endif %}
-      <div class="ate-wrap">
-        <button class="btn-ghost btn-sm ate-this" onclick="Food.logOption(this, {{ opt.row.id }})">comi isso</button>
-      </div>
-    </div>
-    {% endfor %}
-  </div>
-  {% endfor %}
-  </div>
+  {% if configured %}
+  <form class="quick-log" onsubmit="Food.quickLog(event)">
+    <textarea id="quick-text" rows="1" autocomplete="off"
+              placeholder="Comi outra coisa… ex.: 3 ovos e uma banana"
+              oninput="Food.autogrow(this)"></textarea>
+    <button class="btn btn-sm" type="submit" id="quick-btn">Registrar</button>
+  </form>
+  {% else %}
+  <p class="notice">Registro por texto precisa da chave da API (aba Coach). Use "comi isso" enquanto isso.</p>
+  {% endif %}
 </section>
 
 {% endblock %}
 {% block scripts %}
 <script>
+  const TODAY = "{{ today }}";
+  const MEAL_EM = {{ MEAL_EM | tojson }};
+
   App.updateMacros({{ consumed | tojson }}, {{ targets | tojson }});
 
   const Food = {
     autogrow(t) { t.style.height = "auto"; t.style.height = Math.min(t.scrollHeight, 120) + "px"; },
 
-    onKey(e) {
-      if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); Food.quickLog(e); }
+    // Enter quebra linha: o envio é só pelo botão (era a irritação nº 1 do app)
+
+    count() {
+      const list = document.getElementById("done-list");
+      const n = list.children.length;
+      document.getElementById("done-count").textContent = n ? " · " + n : "";
+      document.getElementById("done-empty").style.display = n ? "none" : "";
     },
 
     render(e) {
@@ -112,20 +165,26 @@
       div.className = "logitem";
       div.dataset.id = e.id;
       const meal = e.meal ? `<b>${e.meal}:</b> ` : "";
-      div.innerHTML = `<span class="li-main">${meal}${e.description}</span>`
-        + `<span class="li-macros">${Math.round(e.kcal)} kcal · P ${Math.round(e.protein_g)} · C ${Math.round(e.carbs_g)} · G ${Math.round(e.fat_g)}</span>`
-        + `<button class="li-del" aria-label="Remover">×</button>`;
+      const em = (e.meal && MEAL_EM[e.meal.toLowerCase()]) || "🍽️";
+      div.innerHTML = `<div class="li-top"><span class="em">${em}</span>`
+        + `<span class="li-main">${meal}${e.description}</span>`
+        + `<button class="li-del" aria-label="Remover">×</button></div>`
+        + `<span class="li-macros">${Math.round(e.kcal)} kcal · P ${Math.round(e.protein_g)} · C ${Math.round(e.carbs_g)} · G ${Math.round(e.fat_g)}</span>`;
       div.querySelector(".li-del").onclick = () => Food.remove(div.querySelector(".li-del"), e.id);
-      document.getElementById("food-log").appendChild(div);
-      document.getElementById("food-empty").style.display = "none";
+      document.getElementById("done-list").appendChild(div);
+      Food.count();
     },
 
     async logOption(btn, optionId) {
       btn.disabled = true;
       try {
-        const r = await App.post("/api/food/log-option", { option_id: optionId, date: "{{ today }}" });
+        const r = await App.post("/api/food/log-option", { option_id: optionId, date: TODAY });
         Food.render(r.entry);
         App.updateMacros(r.consumed, r.targets);
+        // a refeição registrada sai do fluxo e a próxima assume o destaque
+        btn.closest(".act-card").remove();
+        const next = document.querySelector(".act-card.future");
+        if (next) next.classList.remove("future");
       } finally { btn.disabled = false; }
     },
 
@@ -139,10 +198,10 @@
       try {
         const res = await fetch("/api/food/quick-log", {
           method: "POST", headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ text, date: "{{ today }}" }),
+          body: JSON.stringify({ text, date: TODAY }),
         });
         const data = await res.json();
-        if (!res.ok) { alert(data.error || "Erro ao registrar."); return; }
+        if (!res.ok) { App.toast(data.error || "Erro ao registrar."); return; }
         input.value = "";
         input.style.height = "auto";
         data.entries.forEach(Food.render);
@@ -151,11 +210,10 @@
     },
 
     async remove(btn, id) {
-      const r = await App.post("/api/food/delete", { id, date: "{{ today }}" });
+      const r = await App.post("/api/food/delete", { id, date: TODAY });
       btn.closest(".logitem").remove();
       App.updateMacros(r.consumed, r.targets);
-      if (!document.querySelector("#food-log .logitem"))
-        document.getElementById("food-empty").style.display = "";
+      Food.count();
     },
   };
 </script>

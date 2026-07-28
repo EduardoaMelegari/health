@@ -58,28 +58,20 @@ const App = {
     }
   },
 
+  // cabeçalho da Hoje: donut de kcal restantes + linha mono dos macros
   updateMacros(consumed, targets) {
-    const units = { kcal: " kcal", protein_g: " g", carbs_g: " g", fat_g: " g" };
-    for (const key of Object.keys(units)) {
-      const fill = document.querySelector(`[data-macro-fill="${key}"]`);
-      const val = document.querySelector(`[data-macro-val="${key}"]`);
-      if (!fill) continue;
-      const pct = targets[key] ? (100 * consumed[key]) / targets[key] : 0;
-      fill.style.width = Math.min(100, pct) + "%";
-      fill.classList.toggle("over", pct > 107);
-      val.textContent = `${this.fmt(consumed[key])} / ${this.fmt(targets[key])}${units[key]}`;
+    const ring = document.getElementById("kcal-ring");
+    if (ring) {
+      const pct = targets.kcal ? (100 * consumed.kcal) / targets.kcal : 0;
+      ring.style.setProperty("--pct", Math.min(100, pct).toFixed(1) + "%");
+      ring.classList.toggle("over", pct > 107);
+      document.getElementById("kcal-left").textContent =
+        this.fmt(Math.max(0, targets.kcal - consumed.kcal));
     }
-    const note = document.getElementById("macro-note");
-    if (!note) return;
-    const missP = targets.protein_g - consumed.protein_g;
-    const missK = targets.kcal - consumed.kcal;
-    if (missP > 0) {
-      note.className = "macro-note";
-      note.innerHTML = `Faltam <strong>${this.fmt(missP)} g de proteína</strong> e ${this.fmt(Math.max(0, missK))} kcal para a meta.`;
-    } else {
-      note.className = "macro-note done";
-      note.innerHTML = `<strong>Meta de proteína batida ✓</strong>` +
-        (missK > 0 ? ` · restam ${this.fmt(missK)} kcal.` : ` · calorias no alvo.`);
+    const line = document.getElementById("macro-line");
+    if (line) {
+      const p = (k) => `${this.fmt(consumed[k])}/${this.fmt(targets[k])}`;
+      line.textContent = `P ${p("protein_g")} · C ${p("carbs_g")} · G ${p("fat_g")}`;
     }
   },
 };
