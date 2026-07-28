@@ -303,14 +303,58 @@ def _dispatch(conn, name, args):
         return f"Erro ao executar {name}: {exc}", True
 
 
+def _sanitize_content(content):
+    """Converte blocos do SDK para um formato seguro de histórico.
+    Remove campos específicos do SDK (como parsed_output) que a API rejeita ao
+    re-enviar a conversa."""
+    if isinstance(content, str):
+        return content
+    if not isinstance(content, list):
+        return content
+
+    cleaned = []
+    for block in content:
+        if not isinstance(block, dict):
+            continue
+        btype = block.get("type")
+        if btype == "text":
+            text = block.get("text")
+            if isinstance(text, dict):
+                text = text.get("text")
+            cleaned.append({"type": "text", "text": text or ""})
+        elif btype == "tool_use":
+            cleaned.append({
+                "type": "tool_use",
+                "id": block.get("id"),
+                "name": block.get("name"),
+                "input": block.get("input", {}),
+            })
+        elif btype == "tool_result":
+            cleaned.append({
+                "type": "tool_result",
+                "tool_use_id": block.get("tool_use_id"),
+                "content": block.get("content"),
+                "is_error": block.get("is_error"),
+            })
+    return cleaned
+
+
 def _persistable(blocks):
     """Blocos a guardar no histórico (texto + tool_use). Descarta thinking —
     um novo turno começa raciocínio do zero."""
     out = []
     for b in blocks:
-        d = b.model_dump()
-        if d.get("type") in ("text", "tool_use"):
-            out.append(d)
+        if hasattr(b, "model_dump"):
+            try:
+                d = b.model_dump(exclude_unset=True, exclude_none=True)
+            except TypeError:
+                d = b.model_dump()
+        else:
+            d = b
+        if d.get("type") in ("text", "tool_use", "tool_result"):
+            sanitized = _sanitize_content([d])
+            if sanitized:
+                out.append(sanitized[0])
     return out
 
 
@@ -361,7 +405,8 @@ def _api_history(conn, day):
         "SELECT role, content_json FROM chat_message"
         " WHERE active = 1 AND substr(created_at, 1, 10) = ? ORDER BY id DESC LIMIT ?",
         (day, HISTORY_LIMIT)).fetchall()
-    msgs = [{"role": r["role"], "content": json.loads(r["content_json"])} for r in reversed(rows)]
+    msgs = [{"role": r["role"], "content": _sanitize_content(json.loads(r["content_json"]))}
+            for r in reversed(rows)]
     # a janela não pode começar com tool_result órfão; corta até a 1ª mensagem 'limpa'
     while msgs and _starts_with_tool_result(msgs[0]):
         msgs.pop(0)
